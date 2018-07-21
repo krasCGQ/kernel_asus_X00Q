@@ -1169,6 +1169,12 @@ static void mmc_sd_detect(struct mmc_host *host)
 		pm_runtime_put_autosuspend(&host->card->dev);
 		return;
 	}
+
+	#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME 
+	if (mmc_bus_needs_resume(host)) 
+	mmc_resume_bus(host); 
+	#endif 
+	
 	mmc_power_up(host, host->ocr_avail);
 	/*
 	 * Just check if our card has been removed.

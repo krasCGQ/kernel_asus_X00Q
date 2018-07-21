@@ -31,6 +31,7 @@
 #include <linux/debugfs.h>
 #include <linux/version.h>
 #include <linux/input.h>
+#include <linux/miscdevice.h>
 #include "config.h"
 #include "tfa98xx.h"
 #include "tfa.h"
@@ -2601,10 +2602,11 @@ enum Tfa98xx_Error tfa98xx_adsp_send_calib_values(struct tfa98xx *tfa98xx)
 	int value = 0, nr, dsp_cal_value = 0;
 
 	/* If calibration is set to once we load from MTP, else send zero's */
-	if (TFA_GET_BF(tfa, MTPEX) == 1 && tfa98xx->i2c->addr == 0x34) 
+	if (tfa98xx->i2c->addr == 0x34)
 	{
 		value = tfa_dev_mtp_get(tfa, TFA_MTP_RE25);
 		dsp_cal_value = (value * 65536) / 1000;
+		dev_err(&tfa98xx->i2c->dev, "%s: MTPEX status 0x%x; MTP_RE25 status %d\n", __func__, TFA_GET_BF(tfa, MTPEX), value);
 		
 		nr = 4;
 		/* We have to copy it for both channels. Even when mono! */
@@ -2615,14 +2617,17 @@ enum Tfa98xx_Error tfa98xx_adsp_send_calib_values(struct tfa98xx *tfa98xx)
 		dev_err(&tfa98xx->i2c->dev, "%s: cal value 0x%x\n", __func__, dsp_cal_value);
 
 		/* Receiver RDC */
-		if (value > 20000) 
+		if (value < 25200 || value > 30800)
+			dev_err(&tfa98xx->i2c->dev, "%s: cal value Out of range try to use golden value!\n", __func__);
+		else
 			bytes[0] |= 0x01;
 	}
 	
-	if (TFA_GET_BF(tfa, MTPEX) == 1 && tfa98xx->i2c->addr == 0x35) 
+	if (tfa98xx->i2c->addr == 0x35)
 	{
 		value = tfa_dev_mtp_get(tfa, TFA_MTP_RE25);
 		dsp_cal_value = (value * 65536) / 1000;
+		dev_err(&tfa98xx->i2c->dev, "%s: MTPEX status 0x%x; MTP_RE25 status %d\n", __func__, TFA_GET_BF(tfa, MTPEX), value);
 		
 		nr = 7;
 		/* We have to copy it for both channels. Even when mono! */
@@ -2633,7 +2638,9 @@ enum Tfa98xx_Error tfa98xx_adsp_send_calib_values(struct tfa98xx *tfa98xx)
 		dev_err(&tfa98xx->i2c->dev, "%s: cal value 0x%x\n", __func__, dsp_cal_value);
 
 		/* Speaker RDC */
-		if (value > 4000) 
+		if (value < 6120 || value > 8280)
+			dev_err(&tfa98xx->i2c->dev, "%s: cal value Out of range try to use golden value!\n", __func__);
+		else
 			bytes[0] |= 0x10;
 	}
 
@@ -3001,6 +3008,80 @@ retry:
 	return ((ret > 1) ? count : -EIO);
 }
 
+static ssize_t tfa98xx_misc_rpc_read(struct file *file,
+				     char __user *user_buf, size_t count,
+				     loff_t *ppos)
+{
+	struct i2c_client *i2c = file->private_data;
+	//struct tfa98xx *tfa98xx = i2c_get_clientdata(i2c);
+	int ret = 0;
+	uint8_t *buffer;
+
+	buffer = kmalloc(count, GFP_KERNEL);
+	if (buffer == NULL) {
+		pr_err("[0x%x] can not allocate memory\n", i2c->addr);
+		return -ENOMEM;
+	}
+
+	//mutex_lock(&tfa98xx->dsp_lock);
+
+	ret = send_tfa_cal_apr(buffer, count, true);
+
+	//mutex_unlock(&tfa98xx->dsp_lock);
+	if (ret) {
+		pr_err("[0x%x] dsp_msg_read error: %d\n", i2c->addr, ret);
+		kfree(buffer);
+		return -EFAULT;
+	}
+
+	ret = copy_to_user(user_buf, buffer, count);
+	kfree(buffer);
+	if (ret)
+		return -EFAULT;
+
+	*ppos += count;
+	return count;
+}
+
+static ssize_t tfa98xx_misc_rpc_send(struct file *file,
+				     const char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	struct i2c_client *i2c = file->private_data;
+	//struct tfa98xx *tfa98xx = i2c_get_clientdata(i2c);
+	uint8_t *buffer;
+	int err = 0;
+
+	if (count == 0)
+		return 0;
+
+	/* msg_file.name is not used */
+	buffer = kmalloc(count, GFP_KERNEL);
+	if ( buffer == NULL ) {
+		pr_err("[0x%x] can not allocate memory\n", i2c->addr);
+		return  -ENOMEM;
+	}
+	if (copy_from_user(buffer, user_buf, count))
+		return -EFAULT;
+
+	//mutex_lock(&tfa98xx->dsp_lock);
+
+	err = send_tfa_cal_apr(buffer, count, false);
+	if (err) {
+		pr_err("[0x%x] dsp_msg error: %d\n", i2c->addr, err);
+	}
+
+	mdelay(2);
+
+	//mutex_unlock(&tfa98xx->dsp_lock);
+
+	kfree(buffer);
+
+	if (err)
+		return err;
+	return count;
+}
+
 static struct bin_attribute dev_attr_rw = {
 	.attr = {
 		.name = "rw",
@@ -3019,6 +3100,26 @@ static struct bin_attribute dev_attr_reg = {
 	.size = 0,
 	.read = NULL,
 	.write = tfa98xx_reg_write,
+};
+
+static const struct file_operations tfa98xx_misc_rpc_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = tfa98xx_misc_rpc_read,
+	.write = tfa98xx_misc_rpc_send,
+	.llseek = default_llseek,
+};
+
+struct miscdevice tfa98xx_rpc_misc34 = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = "ASUS_rpc_34",
+	.fops = &tfa98xx_misc_rpc_fops,
+};
+
+struct miscdevice tfa98xx_rpc_misc35 = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = "ASUS_rpc_35",
+	.fops = &tfa98xx_misc_rpc_fops,
 };
 
 static int tfa98xx_i2c_probe(struct i2c_client *i2c,
@@ -3229,6 +3330,18 @@ static int tfa98xx_i2c_probe(struct i2c_client *i2c,
 	ret = device_create_bin_file(&i2c->dev, &dev_attr_reg);
 	if (ret)
 		dev_info(&i2c->dev, "error creating sysfs files\n");
+
+	if (i2c->addr == 0x35)	{
+		dev_info(&i2c->dev, "tfa98xx try to registered misc_register(%s)\n", tfa98xx_rpc_misc34.name);
+		ret = misc_register(&tfa98xx_rpc_misc34);
+		if (ret)
+			dev_info(&i2c->dev, "error creating miscfs files\n");
+	} else	{
+		dev_info(&i2c->dev, "tfa98xx try to registered misc_register(%s)\n", tfa98xx_rpc_misc35.name);
+		ret = misc_register(&tfa98xx_rpc_misc35);
+		if (ret)
+			dev_info(&i2c->dev, "error creating miscfs files\n");
+	}
 
 	pr_info("%s Probe completed successfully!\n", __func__);
 

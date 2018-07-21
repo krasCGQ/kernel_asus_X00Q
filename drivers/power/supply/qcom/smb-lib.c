@@ -98,12 +98,21 @@ int g_asus_QC3_WA =0;
 int g_asus_QC2_WA =0;
 int g_non200k_QC3_WA =0;
 int g_legacy_check_cnt =0;
+int g_jeita_full_monitor =0;
+int g_jeita_full_detection =0;
+
 #define QC3_200K_ICL	0x3E
 #define QC3_NON200K_ICL	0x38
 #define SOFT_START_ICL  0x14
 #define SOFT_START_END_ICL	0x27
 #define SOFT_START_ICL_DELTA  0x0A // 250ma
 #define SOFT_START_DELAY_MS  10000
+#define PD_POWER_DETECTION_DONE	5
+#define PD_POWER_LEVEL_HIGH	2
+#define PD_POWER_LEVEL_MEDIUM	1
+#define PD_POWER_LEVEL_DEFAULT	0
+#define PD_POWER_NOT_PD	-1
+int g_pd_level =PD_POWER_NOT_PD;
 u8 g_SS_begin_icl = SOFT_START_ICL; //ICL_500mA
 u8 g_SS_end_icl = SOFT_START_END_ICL;
 u8 g_SS_icl_step = SOFT_START_ICL_DELTA;
@@ -132,6 +141,9 @@ int asus_get_prop_batt_volt(struct smb_charger *chg);
 int asus_get_prop_batt_capacity(struct smb_charger *chg);
 int asus_get_prop_batt_health(struct smb_charger *chg);
 int asus_get_prop_usb_present(struct smb_charger *chg);
+int asus_get_batt_status(struct smb_charger *chg);
+
+
 
 extern const char *batt_status_text[];
 
@@ -709,6 +721,14 @@ static int smblib_set_usb_pd_allowed_voltage(struct smb_charger *chg,
 static int smblib_request_dpdm(struct smb_charger *chg, bool enable)
 {
 	int rc = 0;
+
+	if(chg->pr_swap_in_progress){
+		CHG_DBG_EVT("%s  skip\n",__func__);
+		return rc;
+
+	}
+
+
 
 	/* fetch the DPDM regulator */
 	if (!chg->dpdm_reg && of_get_property(chg->dev->of_node,
@@ -1927,10 +1947,11 @@ bool temp_ubatlife_specified(union power_supply_propval *val, char* note){
 Due to google treble, it's not suggest for AP to get QC status here;
 But report QC status in charger mode may be OK.
 */
+bool high_power_pd(void);
 bool charger_mode_specified(union power_supply_propval *val){
 
 			if (g_Charger_mode && (asus_CHG_TYPE == ASUS_QC_AC_ID || 
-				asus_CHG_TYPE == ASUS_ABOVE_13P5W_ID||smbchg_dev->pd_active)){
+				asus_CHG_TYPE == ASUS_ABOVE_13P5W_ID)){
 				if(asus_get_prop_batt_capacity(smbchg_dev) <= QC_STATE_SOC_THD) {
 					val->intval = POWER_SUPPLY_STATUS_QUICK_CHARGING;
 				} else {
@@ -1956,6 +1977,17 @@ bool charger_mode_specified(union power_supply_propval *val){
 				val->intval = POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING;	
 				return true;
 			}
+			else if(g_Charger_mode && high_power_pd()){
+				if(g_pd_level == PD_POWER_LEVEL_HIGH)
+					val->intval = POWER_SUPPLY_STATUS_QUICK_CHARGING;
+				else if(g_pd_level == PD_POWER_LEVEL_MEDIUM)
+					val->intval = POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING;
+				else
+					val->intval = POWER_SUPPLY_STATUS_CHARGING;
+					
+				return true;
+			}
+			
 			else return false;
 		
 }
@@ -2025,6 +2057,7 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 		case TERMINATE_CHARGE:
 		case INHIBIT_CHARGE:
 			val->intval = POWER_SUPPLY_STATUS_FULL;
+			//printk("[BAT][CHG] Batt_status = TERM/INH\n");
 			break;
 		default:
 			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
@@ -2046,6 +2079,8 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 	case INHIBIT_CHARGE:
 		printk("[BAT][CHG] Batt_status = FULL\n");
 		val->intval = POWER_SUPPLY_STATUS_FULL;
+		if(g_jeita_full_monitor )
+			g_jeita_full_detection =1;
 		break;
 	case DISABLE_CHARGE:
 		batt_status_disable(val);
@@ -3668,6 +3703,15 @@ int asus_get_prop_usb_present(struct smb_charger *chg)
 	return present_val.intval;
 }
 
+int asus_get_prop_usb_voltage(struct smb_charger *chg)
+{
+	union power_supply_propval present_val = {0, };
+	int rc;
+
+	rc = smblib_get_prop_usb_voltage_now(chg, &present_val);
+
+	return present_val.intval;
+}
 /************************
  * ASUS FG GET CHARGER PARAMATER NAME *
  ************************/
@@ -3699,13 +3743,15 @@ int asus_get_ufp_mode(void)
 int asus_get_batt_health(void)
 {
 	int bat_health;
-
+	u8 stat;
+	
+	smblib_read(smbchg_dev, BATTERY_CHARGER_STATUS_2_REG, &stat);
 	bat_health = asus_get_prop_batt_health(smbchg_dev);
 
 	if (bat_health == POWER_SUPPLY_HEALTH_GOOD)
 		return 0;
 	else if (bat_health == POWER_SUPPLY_HEALTH_COLD) {
-		//ASUSErclog(ASUS_JEITA_HARD_COLD, "JEITA Hard Cold is triggered");
+		ASUSErclog(ASUS_JEITA_HARD_COLD, "JEITA Hard Cold is triggered\n");
 		return 1;
 	}
 	else if (bat_health == POWER_SUPPLY_HEALTH_COOL)
@@ -3713,17 +3759,35 @@ int asus_get_batt_health(void)
 	else if (bat_health == POWER_SUPPLY_HEALTH_WARM)
 		return 3;
 	else if (bat_health == POWER_SUPPLY_HEALTH_OVERHEAT) {
-		//ASUSErclog(ASUS_JEITA_HARD_HOT, "JEITA Hard Hot is triggered");
+
+		 if (stat & BAT_TEMP_STATUS_TOO_HOT_BIT){
+			ASUSErclog(ASUS_JEITA_HARD_HOT, "JEITA Hard Hot is triggered\n");
+		 }
+		else if (stat & BAT_TEMP_STATUS_HOT_SOFT_LIMIT_BIT){
+			ASUSErclog(ASUS_JEITA_SOFT_HOT, "JEITA Soft Hot is triggered\n");
+		}
+		else;
 		return 4;
 	}
 	else if (bat_health == POWER_SUPPLY_HEALTH_OVERVOLTAGE) {
-		//ASUSErclog(ASUS_OUTPUT_OVP, "Battery OVP is triggered");
+		ASUSErclog(ASUS_OUTPUT_OVP, "Battery OVP is triggered\n");
 		return 5;
 	}
 	else
 		return 6;
 }
 
+
+int asus_get_batt_status(struct smb_charger *chg){
+	
+	union power_supply_propval health_val = {0, };
+	int rc;
+
+	rc = smblib_get_prop_batt_status(chg, &health_val);
+
+	return health_val.intval;
+
+}
 void asus_typec_removal_function(struct smb_charger *chg)
 {
 	int rc,val;
@@ -3782,6 +3846,8 @@ void asus_typec_removal_function(struct smb_charger *chg)
 	g_legacy_check_cnt = 0;
 	g_d2d_WA =0;
 	g_PD_chg_icon =0;
+	g_pd_level =PD_POWER_NOT_PD;
+	g_jeita_full_detection =0;
 	asus_smblib_relax(smbchg_dev);
 	asus_smblib_SS_relax(smbchg_dev);
 
@@ -3881,7 +3947,7 @@ static bool ADF_check_status(void)
 #define ICL_3000mA	0x78
 
 #define ASUS_MONITOR_CYCLE		60000
-#define ADC_WAIT_TIME_HVDCP0	15000
+#define ADC_WAIT_TIME_HVDCP0	3000
 #define ADC_WAIT_TIME_HVDCP23	100
 
 #define TITAN_750K_MIN	675
@@ -4078,14 +4144,22 @@ static bool check_ultrabatterylife_enable(void)
 }
 //ASUS_BSP ---
 
+#define PD_HIGH_POWER		13500
+#define PD_MEDIUM_POWER	10000
+#define PD_POWER_REGION 	1000
 bool high_power_pd(void){
 
 	u8 ICL_reg = 0x14; 
-	static int cnt=0;
+	//static int cnt=0;
+	int voltage_mv = 5000;
+	int current_ma = 500;
+	int power_mw = 0;
+	
 	smblib_read(smbchg_dev, USBIN_CURRENT_LIMIT_CFG_REG, &ICL_reg);
 
 
 	if(g_PD_chg_icon && smbchg_dev->pd_active){
+		/*
 		if(g_d2d_WA){
 			++cnt;
 			if(cnt==1){
@@ -4101,7 +4175,32 @@ bool high_power_pd(void){
 		}
 		else
 			return true;
+		*/
+		if(g_pd_level != PD_POWER_NOT_PD){
+			//g_pd_level = PD_POWER_DETECTION_DONE;
+			return true;
+		}
+		
+		voltage_mv = asus_get_prop_usb_voltage(smbchg_dev)/1000;
+		current_ma = (int)ICL_reg*25;
+		power_mw = voltage_mv *current_ma/1000;
 
+		if(power_mw > (PD_HIGH_POWER-PD_POWER_REGION) ){
+			g_pd_level = PD_POWER_LEVEL_HIGH;	
+
+		}	
+		else if(power_mw > (PD_MEDIUM_POWER-PD_POWER_REGION)){
+			g_pd_level = PD_POWER_LEVEL_MEDIUM;	
+
+		}
+		else{
+			g_pd_level = PD_POWER_LEVEL_DEFAULT;	
+			
+		}
+		CHG_DBG_EVT("vol %d, cur %d, P %d, level %d\n",
+			voltage_mv,current_ma,power_mw,g_pd_level);
+
+		return true;
 	}
 	else 
 		return false;
@@ -4165,7 +4264,8 @@ void jeita_rule(void)
 	state = smbchg_jeita_judge_state(state, bat_temp);
 	CHG_DBG("%s: batt_health = %s, temp = %d, volt = %d, ICL = 0x%x, COUT %d\n",
 		__func__, health_type[bat_health], bat_temp, bat_volt, ICL_reg, BR_countrycode);
-
+	g_jeita_full_monitor =0;
+	
 	switch (state) {
 	case JEITA_STATE_LESS_THAN_0:
 		charging_enable = EN_BAT_CHG_EN_COMMAND_FALSE;
@@ -4212,9 +4312,18 @@ void jeita_rule(void)
 		if (bat_volt >= 4100000 && FV_reg == 0x74) {
 			charging_enable = EN_BAT_CHG_EN_COMMAND_FALSE;
 			FV_CFG_reg_value = SMBCHG_FLOAT_VOLTAGE_VALUE_4P357;
-		} else {
+			//CHG_DBG_EVT("%s: 50  60  4.1v\n", __func__);			
+		} else if(g_jeita_full_detection){			
+			charging_enable = EN_BAT_CHG_EN_COMMAND_FALSE;
+			FV_CFG_reg_value = SMBCHG_FLOAT_VOLTAGE_VALUE_4P064;
+			g_jeita_full_detection++;
+			CHG_DBG_EVT("%s: 50  60  full\n", __func__);
+			
+		}else {
+			g_jeita_full_monitor =1;		
 			charging_enable = EN_BAT_CHG_EN_COMMAND_TRUE;
 			FV_CFG_reg_value = SMBCHG_FLOAT_VOLTAGE_VALUE_4P064;
+			//CHG_DBG_EVT("%s: 50  60  4.1v below\n", __func__);						
 		}
 		FCC_reg_value = SMBCHG_FAST_CHG_CURRENT_VALUE_1475MA;
 		CHG_DBG("%s: 50 <= temperature < 60\n", __func__);
@@ -4226,6 +4335,9 @@ void jeita_rule(void)
 		CHG_DBG("%s: temperature >= 60\n", __func__);
 		break;
 	}
+
+	if(g_jeita_full_detection >0)
+		g_jeita_full_detection -=1;
 
 	//WeiYu: WA for PD/QC3 current overflow
 	if(smbchg_dev->pd_active && ICL_reg == ICL_1650mA
@@ -4331,6 +4443,9 @@ void jeita_rule(void)
 	rc = jeita_status_regs_write(charging_enable, FV_CFG_reg_value, FCC_reg_value);
 	if (rc < 0)
 		CHG_DBG("%s: Couldn't write jeita_status_register rc = %d\n", __func__, rc);
+
+
+
 }
 
 void update_inov_info(void){
@@ -4665,7 +4780,7 @@ void asus_chg_flow_work(struct work_struct *work)
 			However, it is not high power so shouldn't be "++"
 			Let g_d2d_WA=1 to report d2d as normal icon.
 		*/
-		g_d2d_WA =1;
+		//g_d2d_WA =1;
 
 		//Not sure whether this supply change is necessary, keep it.
 		//Maybe for "adb" related issue.
@@ -4712,6 +4827,7 @@ void asus_chg_flow_work(struct work_struct *work)
 			Otherwise, PD regardless high/low power will becomes icon "++"
 		*/
 		g_PD_chg_icon =1;
+		power_supply_changed(smbchg_dev->batt_psy); // To update PD icon "+" or "++"		
 		asus_adapter_detecting_flag = 0;
 		smblib_asus_monitor_start(smbchg_dev, DELAY_MONITOR_WORK_MS);		//ASUS BSP Austin_T: Jeita start
 		return;
@@ -4811,7 +4927,7 @@ void asus_chg_flow_work(struct work_struct *work)
 		}
 
 		if (HVDCP_FLAG == 0) {
-			CHG_DBG("%s: NOT factory_build, HVDCP_FLAG = 0, ADC_WAIT_TIME = 15s\n", __func__);
+			CHG_DBG("%s: NOT factory_build, HVDCP_FLAG = 0, ADC_WAIT_TIME = 3s\n", __func__);
 			schedule_delayed_work(&smbchg_dev->asus_adapter_adc_work, msecs_to_jiffies(ADC_WAIT_TIME_HVDCP0));
 		} else {
 			CHG_DBG("%s: NOT factory_build, HVDCP_FLAG = 2or3, ADC_WAIT_TIME = 0.1s\n", __func__);
@@ -4983,6 +5099,15 @@ void asus_adapter_adc_work(struct work_struct *work)
 				asus_CHG_TYPE = ASUS_NORMAL_AC_ID;				
 				usb_max_current = ICL_2000mA;
 		}
+		else if(HVDCP_FLAG == 0 && !LEGACY_CABLE_FLAG && UFP_FLAG == 3){
+				asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;				
+				usb_max_current = ICL_3000mA;
+				if(!g_Charger_mode){
+				usb_max_current = ICL_500mA;			
+				asus_trigger_soft_start(SOFT_START_ICL,ICL_3000mA,
+					SOFT_START_ICL_DELTA,SOFT_START_DELAY_MS);	
+				}				
+		}		
 		else if(HVDCP_FLAG == 0 && !LEGACY_CABLE_FLAG && UFP_FLAG == 1){
 				asus_CHG_TYPE = ASUS_NORMAL_AC_ID;				
 				usb_max_current = ICL_2000mA;
@@ -5021,6 +5146,15 @@ void asus_adapter_adc_work(struct work_struct *work)
 		else if(HVDCP_FLAG == 0 && LEGACY_CABLE_FLAG){
 			usb_max_current = ICL_1000mA;
 		}
+		else if(HVDCP_FLAG == 0 && !LEGACY_CABLE_FLAG && UFP_FLAG == 3){
+				asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;				
+				usb_max_current = ICL_3000mA;
+				if(!g_Charger_mode){
+				usb_max_current = ICL_500mA;			
+				asus_trigger_soft_start(SOFT_START_ICL,ICL_3000mA,
+					SOFT_START_ICL_DELTA,SOFT_START_DELAY_MS);	
+				}				
+		}			
 		else if(HVDCP_FLAG == 0 && !LEGACY_CABLE_FLAG && UFP_FLAG == 1){
 			usb_max_current = ICL_1000mA;
 		}
@@ -5054,6 +5188,15 @@ void asus_adapter_adc_work(struct work_struct *work)
 				asus_CHG_TYPE = ASUS_NORMAL_AC_ID;				
 				usb_max_current = ICL_2000mA;
 		}
+		else if(HVDCP_FLAG == 0 && !LEGACY_CABLE_FLAG && UFP_FLAG == 3){
+				asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;				
+				usb_max_current = ICL_3000mA;
+				if(!g_Charger_mode){
+				usb_max_current = ICL_500mA;			
+				asus_trigger_soft_start(SOFT_START_ICL,ICL_3000mA,
+					SOFT_START_ICL_DELTA,SOFT_START_DELAY_MS);	
+				}				
+		}			
 		else if(HVDCP_FLAG == 0 && !LEGACY_CABLE_FLAG && UFP_FLAG == 1){
 				asus_CHG_TYPE = ASUS_NORMAL_AC_ID;				
 				usb_max_current = ICL_2000mA;

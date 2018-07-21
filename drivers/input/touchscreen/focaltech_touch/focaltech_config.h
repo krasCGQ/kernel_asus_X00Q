@@ -172,7 +172,7 @@
  * define your own fw_app, the sample one is invalid
  */
 #define FTS_UPGRADE_FW_APP                      "include/firmware/ASUS_TITAN_V0x67_app.i"
-#define FTS_UPGRADE_FW_APP_ARA                  "include/firmware/ASUS_ARA_8716F_03_V0x49_20180321_app.i"
+#define FTS_UPGRADE_FW_APP_ARA                  "include/firmware/ASUS_ARA_8716F_03_V0x60_20180409_app.i"
 /*
  * auto upgrade with app.bin in sdcard
  */

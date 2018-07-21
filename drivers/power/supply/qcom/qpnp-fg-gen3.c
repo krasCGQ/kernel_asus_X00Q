@@ -6163,12 +6163,15 @@ restart:
 		g_adc_param.low_thr = 1600000; //uV
 		g_adc_param.state_request = ADC_TM_LOW_THR_ENABLE;		
 		g_wp_state = 0;
-		switch_set_state(&wp_dev, 0); //ASUS_BSP LiJen add water proof uevent
+		//WeiYu ++ temply remove reporting uevent, HW issue
+		//switch_set_state(&wp_dev, 0); //ASUS_BSP LiJen add water proof uevent
+		ASUSErclog(ASUS_USB_WATER_ALERT, "Water_alert is dismissed.state %d\n",g_wp_state);		
 	}else if(adc < 200000){ //Cable in
 		g_adc_param.high_thr = 300000; //uV
 		g_adc_param.state_request = ADC_TM_HIGH_THR_ENABLE; 	
 		g_wp_state = 2;
-		switch_set_state(&wp_dev, 0); //ASUS_BSP LiJen add water proof uevent
+		//switch_set_state(&wp_dev, 0); //ASUS_BSP LiJen add water proof uevent
+		ASUSErclog(ASUS_USB_WATER_ALERT, "Water_alert is dismissed. state %d\n",g_wp_state);		
 	}else{	//With Liquid
 		if(g_wp_state != 1){
 			//double check into Liquid mode
@@ -6176,7 +6179,8 @@ restart:
 				g_adc_param.high_thr = 1700000; //uV
 				g_adc_param.state_request = ADC_TM_HIGH_THR_ENABLE; 
 				g_wp_state = 1;
-				switch_set_state(&wp_dev, 1); //ASUS_BSP LiJen add water proof uevent
+				//switch_set_state(&wp_dev, 1); //ASUS_BSP LiJen add water proof uevent
+				ASUSErclog(ASUS_USB_WATER_ALERT, "Water_alert is triggered\n");		
 			}else{
 				goto restart;
 			}
@@ -6185,6 +6189,7 @@ restart:
 		}
 	}
 	pr_err("%s adc(%d), g_wp_state(%d), low_thr(%d), high_thr(%d), state_request(%d)\n", __func__, adc, g_wp_state, g_adc_param.low_thr, g_adc_param.high_thr, g_adc_param.state_request);
+	ASUSEvtlog("%s adc(%d), g_wp_state(%d), low_thr(%d), high_thr(%d), state_request(%d)\n", __func__, adc, g_wp_state, g_adc_param.low_thr, g_adc_param.high_thr, g_adc_param.state_request);
 	g_adc_param.channel = 0x72;
 	g_adc_param.timer_interval = ADC_MEAS2_INTERVAL_1S;
 	g_adc_param.btm_ctx = chip;

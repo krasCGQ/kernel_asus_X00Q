@@ -43,7 +43,7 @@ int entering_suspend = 0;
 phys_addr_t PRINTK_BUFFER_PA = 0xA0000000;
 void *PRINTK_BUFFER_VA;
 phys_addr_t RTB_BUFFER_PA = 0xA0000000 + SZ_1M;
-ulong logcat_buffer_index = 0; /* ASUS_BSP Paul +++ */
+ulong logcat_buffer_index = 0; /* ASUS_BSP For upload crash log to DroBox issue */
 extern struct timezone sys_tz;
 #define RT_MUTEX_HAS_WAITERS    1UL
 #define RT_MUTEX_OWNER_MASKALL  1UL
@@ -764,15 +764,20 @@ void save_last_shutdown_log(char *filename)
     char buffer[] = {"Kernel panic"};
     int i;
     // ASUS_BSP ---
-	/* ASUS_BSP Paul +++ */
+	/* ASUS_BSP For upload crash log to DroBox issue */
 	char *last_logcat_buffer;
+	ulong *printk_buffer_slot2_addr = (ulong *)PRINTK_BUFFER_SLOT2;
 	int fd_kmsg, fd_logcat;
-	/* ASUS_BSP Paul --- */
+	ulong printk_buffer_index;
+	/* ASUS_BSP --- */
 
 	t = cpu_clock(0);
 	nanosec_rem = do_div(t, 1000000000);
 	last_shutdown_log = (char *)PRINTK_BUFFER_VA;
-	last_logcat_buffer = (char *)LOGCAT_BUFFER; /* ASUS_BSP Paul +++ */
+	/* ASUS_BSP For upload crash log to DroBox issue */
+	last_logcat_buffer = (char *)LOGCAT_BUFFER;
+	printk_buffer_slot2_addr = (ulong *)PRINTK_BUFFER_SLOT2;
+	/* ASUS_BSP --- */
 	sprintf(messages, ASUS_ASDF_BASE_DIR "LastShutdown_%lu.%06lu.txt",
 		(unsigned long)t,
 		nanosec_rem / 1000);
@@ -796,22 +801,41 @@ void save_last_shutdown_log(char *filename)
 	} else {
 		printk("[ASDF] save_last_shutdown_error: [%d]\n", file_handle);
 	}
-	/* ASUS_BSP Paul +++ */
-	fd_kmsg = sys_open("/asdf/last_kmsg", O_CREAT | O_RDWR | O_SYNC, S_IRUGO);
-	if (!IS_ERR((const void *)(ulong)fd_kmsg)) {
-		sys_write(fd_kmsg, (unsigned char *)last_shutdown_log, PRINTK_BUFFER_SLOT_SIZE);
-		sys_close(fd_kmsg);
-	} else {
-		printk("[ASDF] failed to save last shutdown log to last_kmsg\n");
+	/* ASUS_BSP For upload crash log to DroBox issue */
+	printk_buffer_index = *(printk_buffer_slot2_addr + 1);
+	if ((printk_buffer_index < PRINTK_BUFFER_SLOT_SIZE) && (LAST_KMSG_SIZE < SZ_128K)) {
+		fd_kmsg = sys_open("/asdf/last_kmsg_16K", O_CREAT | O_RDWR | O_SYNC, S_IRUGO);
+		if (!IS_ERR((const void *)(ulong)fd_kmsg)) {
+			char *buf = kzalloc(LAST_KMSG_SIZE, GFP_ATOMIC);
+			if (!buf) {
+				printk("[ASDF] failed to allocate buffer for last_kmsg\n");
+			} else {
+				if (printk_buffer_index > LAST_KMSG_SIZE) {
+					memcpy(buf, last_shutdown_log + printk_buffer_index - LAST_KMSG_SIZE, LAST_KMSG_SIZE);
+				} else {
+					ulong part1 = LAST_KMSG_SIZE - printk_buffer_index;
+					ulong part2 = printk_buffer_index;
+					memcpy(buf, last_shutdown_log + PRINTK_BUFFER_SLOT_SIZE - part1, part1);
+					memcpy(buf + part1, last_shutdown_log, part2);
+				}
+				sys_write(fd_kmsg, buf, LAST_KMSG_SIZE);
+				kfree(buf);
+			}
+			sys_close(fd_kmsg);
+			sys_chmod("/asdf/last_kmsg_16K", S_IRUGO);
+		} else {
+			printk("[ASDF] failed to save last shutdown log to last_kmsg\n");
+		}
 	}
-	fd_logcat = sys_open("/asdf/last_logcat", O_CREAT | O_RDWR | O_SYNC, S_IRUGO);
+	fd_logcat = sys_open("/asdf/last_logcat_16K", O_CREAT | O_RDWR | O_SYNC, S_IRUGO);
 	if (!IS_ERR((const void *)(ulong)fd_logcat)) {
 		sys_write(fd_logcat, (unsigned char *)last_logcat_buffer, LOGCAT_BUFFER_SIZE);
 		sys_close(fd_logcat);
+		sys_chmod("/asdf/last_logcat_16K", S_IRUGO);
 	} else {
 		printk("[ASDF] failed to save last logcat to last_logcat\n");
 	}
-	/* ASUS_BSP Paul --- */
+	/* ASUS_BSP --- */
 	deinitKernelEnv();
 }
 
@@ -1067,8 +1091,8 @@ static void do_write_erc_worker(struct work_struct *work)
         }
 
         pr_debug("flag_read = %d, flag_write = %d, filepath = %s\n", flag_read, flag_write, filepath);
-        g_hfileErclog = sys_open(filepath, O_CREAT|O_RDWR|O_SYNC, 0444);
-        sys_chown(filepath, AID_SDCARD_RW, AID_SDCARD_RW);
+        g_hfileErclog = sys_open(filepath, O_CREAT|O_RDWR|O_SYNC, 0664);
+        //sys_chown(filepath, AID_SDCARD_RW, AID_SDCARD_RW);
 
         if (!IS_ERR((const void *)(ulong)g_hfileEvtlog)) {
             size = sys_lseek(g_hfileErclog, 0, SEEK_END);
@@ -1076,7 +1100,7 @@ static void do_write_erc_worker(struct work_struct *work)
                 sys_close(g_hfileErclog);
                 sys_rmdir(filepath_old);
                 sys_rename(filepath, filepath_old);
-                g_hfileErclog = sys_open(filepath, O_CREAT|O_RDWR|O_SYNC, 0444);
+                g_hfileErclog = sys_open(filepath, O_CREAT|O_RDWR|O_SYNC, 0664);
             }
 
             sys_write(g_hfileErclog, log_body, strlen(log_body));
@@ -1566,7 +1590,7 @@ static struct file_operations turnon_asusdebug_proc_ops = {
 	.write	= turnon_asusdebug_proc_write,
 };
 
-/* ASUS_BSP Paul +++ */
+/* ASUS_BSP For upload crash log to DroBox issue */
 static ssize_t last_logcat_proc_write(struct file *filp, const char __user *buff, size_t len, loff_t *off)
 {
 	char messages[1024];
@@ -1598,7 +1622,7 @@ static ssize_t last_logcat_proc_write(struct file *filp, const char __user *buff
 static struct file_operations last_logcat_proc_ops = {
 	.write = last_logcat_proc_write,
 };
-/* ASUS_BSP Paul --- */
+/* ASUS_BSP --- */
 
 static int __init proc_asusdebug_init(void)
 {
@@ -1606,7 +1630,7 @@ static int __init proc_asusdebug_init(void)
 	proc_create("asusevtlog", S_IRWXUGO, NULL, &proc_asusevtlog_operations);
 	proc_create("asusevtlog-switch", S_IRWXUGO, NULL, &proc_evtlogswitch_operations);
 	proc_create("asusdebug-switch", S_IRWXUGO, NULL, &turnon_asusdebug_proc_ops);
-	proc_create("last_logcat", S_IWUGO, NULL, &last_logcat_proc_ops); /* ASUS_BSP Paul +++ */
+	proc_create("last_logcat", S_IWUGO, NULL, &last_logcat_proc_ops); /* ASUS_BSP For upload crash log to DroBox issue */
 // ASUS_BSP +++ Jiunhau_Wang [ZE554KL][QPST][NA][NA] get QPST download status
 	proc_create("QPSTInfo", S_IRWXUGO, NULL, &proc_QPSTInfo_operations);
 // ASUS_BSP --- Jiunhau_Wang [ZE554KL][QPST][NA][NA] get QPST download status

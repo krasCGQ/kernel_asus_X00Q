@@ -596,7 +596,11 @@ static const char *sdcardfs_follow_link(struct dentry *dentry, void **cookie)
 
 static int sdcardfs_permission_wrn(struct inode *inode, int mask)
 {
+	#if defined(ASUS_USER_BUILD)
+	printk("sdcardfs does not support permission. Use permission2.\n");
+	#else
 	WARN_RATELIMIT(1, "sdcardfs does not support permission. Use permission2.\n");
+	#endif
 	return -EINVAL;
 }
 

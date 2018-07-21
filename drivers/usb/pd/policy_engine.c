@@ -293,10 +293,12 @@ static void *usbpd_ipc_log;
 static bool check_vsafe0v = true;
 module_param(check_vsafe0v, bool, S_IRUSR | S_IWUSR);
 
-static int min_sink_current = 900;
+//static int min_sink_current = 900;
+static int min_sink_current = 500;
 module_param(min_sink_current, int, S_IRUSR | S_IWUSR);
 
-static const u32 default_src_caps[] = { 0x36019096 };	/* VSafe5V @ 1.5A */
+//static const u32 default_src_caps[] = { 0x36019096 };	/* VSafe5V @ 1.5A */
+static const u32 default_src_caps[] = { 0x36019032 };  /* VSafe5V @ 0.5A */
 static const u32 default_snk_caps[] = { 0x2601912C };	/* VSafe5V @ 3A */
 
 struct vdm_tx {

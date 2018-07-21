@@ -2961,12 +2961,16 @@ void register_qc_stat(void)
 }
 
 extern int asus_get_prop_batt_capacity(struct smb_charger *chg);
-extern bool high_power_pd(void);
+extern int g_pd_level;
+extern bool high_power_pd(int* level);
 void set_qc_stat(union power_supply_propval *val)
 {
 
 	int stat,set;
+	int prev_pd;	
 	stat = val->intval;
+
+	//int pd_level =0;
 /*	WeiYu++ mark this due to new chg-icon spec
 
 	//In this function, we care only quick charge(qc) AC 
@@ -2979,8 +2983,7 @@ void set_qc_stat(union power_supply_propval *val)
 */
 
 	if(asus_CHG_TYPE == ASUS_QC_AC_ID ||
-		asus_CHG_TYPE == ASUS_ABOVE_13P5W_ID||
-		high_power_pd()){
+		asus_CHG_TYPE == ASUS_ABOVE_13P5W_ID){
 
 		switch(stat){
 			//"qc" stat happends in charger mode only, refer to smblib_get_prop_batt_status
@@ -3035,7 +3038,63 @@ void set_qc_stat(union power_supply_propval *val)
 
 
 	}
-	else{
+	else if(high_power_pd(&g_pd_level)){
+
+		prev_pd = switch_get_state(&qc_stat);
+
+		
+		switch(stat){
+			//"qc" stat happends in charger mode only, refer to smblib_get_prop_batt_status
+			case POWER_SUPPLY_STATUS_CHARGING:
+			case POWER_SUPPLY_STATUS_NOT_CHARGING:
+			case POWER_SUPPLY_STATUS_10W_QUICK_CHARGING:
+			case POWER_SUPPLY_STATUS_10W_NOT_QUICK_CHARGING:
+			// for work around to charging icon in COS, refer to smblib_get_prop_batt_status
+			case POWER_SUPPLY_STATUS_QUICK_CHARGING:
+			case POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING:				
+
+				set =SWITCH_QC_OTHER; //default
+				if(asus_get_prop_batt_capacity(smbchg_dev) <= QC_STATE_SOC_THD){
+					//set = SWITCH_10W_QUICK_CHARGING;
+					if(g_pd_level == 2){
+						set = SWITCH_QC_QUICK_CHARGING;
+					}
+					else if(g_pd_level == 1){
+						set = SWITCH_10W_QUICK_CHARGING;
+					}					
+
+				}else{ 
+					//set = SWITCH_10W_NOT_QUICK_CHARGING;
+					if(g_pd_level == 2){
+						set = SWITCH_QC_NOT_QUICK_CHARGING;
+					}
+					else if(g_pd_level == 1){
+						set = SWITCH_10W_NOT_QUICK_CHARGING;
+					}
+
+				}	
+
+				if(prev_pd == set)		
+					return;
+				
+				switch_set_state(&qc_stat, set);
+				if(g_pd_level == 2)
+					CHG_DBG("stat: %d, switch: %d (13.5W), prev %d\n",stat, set,prev_pd);
+				else if(g_pd_level == 1)
+					CHG_DBG("stat: %d, switch: %d (10W), prev %d\n",stat, set,prev_pd);
+				else
+					CHG_DBG("stat: %d, switch: %d, prev %d \n",stat, set,prev_pd);
+					
+				break;
+
+			default:
+				set =SWITCH_QC_OTHER;
+				switch_set_state(&qc_stat, set);
+				break;
+
+		}
+
+	}else{
 		set =SWITCH_QC_OTHER;
 		//CHG_DBG("stat: %d, switch: %d\n",stat, set);
 		switch_set_state(&qc_stat, set);
@@ -3134,7 +3193,22 @@ void asus_usb_alert_work(struct work_struct *work)
 
 //[+++]Add the interrupt handler for usb temperature detection
 
+int confirm_trigger_temp_alert(void){
 
+	int val=0, i=0;
+	
+		val= gpio_get_value(global_gpio->USB_THERMAL_ALERT);
+		
+		for(i=0;i<3;i++){
+			msleep(200);
+			val= gpio_get_value(global_gpio->USB_THERMAL_ALERT);
+			if(!val){
+				CHG_DBG_EVT("thermal alert gpio low at round %d\n",i);	
+				return 0;
+			}
+		}
+		return 1;
+}
 
 static irqreturn_t usb_temp_alert_interrupt(int irq, void *dev_id)
 {
@@ -3158,6 +3232,10 @@ static irqreturn_t usb_temp_alert_interrupt(int irq, void *dev_id)
 		usb_alert_flag = status;
 
 	if (status == 1) {
+
+		if(!confirm_trigger_temp_alert())
+			return IRQ_HANDLED;
+	
 		if (usb_otg_present){
 			switch_set_state(&usb_alert_dev, THM_ALERT_WITH_AC);
 			smblib_set_usb_suspend(smbchg_dev, 1);
@@ -3172,6 +3250,10 @@ static irqreturn_t usb_temp_alert_interrupt(int irq, void *dev_id)
 		if (rc < 0)
 			dev_err(smbchg_dev->dev, "Couldn't set CMD_OTG_REG rc=%d\n", rc);
 			CHG_DBG_EVT("%s: switch %d, cable %d\n", __func__, status, usb_otg_present);
+
+		ASUSErclog(ASUS_USB_THERMAL_ALERT, "Thermal Alert is triggered, cable %d otg %d\n",
+			usb_otg_present,otg_reg);
+			
 	} else {
 		if (usb_otg_present){
 			switch_set_state(&usb_alert_dev, THM_ALERT_NONE);
@@ -3183,6 +3265,7 @@ static irqreturn_t usb_temp_alert_interrupt(int irq, void *dev_id)
 				dev_err(smbchg_dev->dev, "Couldn't set CMD_OTG_REG rc=%d\n", rc);		
 			CHG_DBG_EVT("%s: switch %d, cable %d, enable charger \n", __func__, status, usb_otg_present);
 		}
+		ASUSErclog(ASUS_USB_THERMAL_ALERT, "Thermal Alert is dismissed\n");		
 	}
 
 	return IRQ_HANDLED;

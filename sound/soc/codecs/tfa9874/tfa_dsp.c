@@ -3517,11 +3517,16 @@ enum tfa_error tfa_dev_set_state(struct tfa_device *tfa, enum tfa_state state)
 			if (ready)
 				break;
 		} while (loop--);
+
+/* Without Check DSP state function for ARA nonDSP project for device without audio calibration */
+#ifndef TFA9874_NONDSP_STEREO
 		/* Enable FAIM when clock is stable, to avoid MTP corruption */
 		err = tfa98xx_faim_protect(tfa, 1);
 		if (tfa->verbose) {
 			pr_debug("FAIM enabled (err:%d).\n", err);
 		}
+#endif
+
 		break;
 	case TFA_STATE_INIT_FW:      /* DSP framework active (~patch loaded) */
 		break;
@@ -3534,6 +3539,9 @@ enum tfa_error tfa_dev_set_state(struct tfa_device *tfa, enum tfa_state state)
 #else
 		TFA_SET_BF(tfa, SBSL, 1);	/* Coming from state 6 */
 #endif
+
+/* Without Check DSP state function for ARA nonDSP project for device without audio calibration */
+#ifndef TFA9874_NONDSP_STEREO
 									/*
 									* Disable MTP clock to protect memory.
 									* However in case of calibration wait for DSP! (This should be case only during calibration).
@@ -3549,6 +3557,7 @@ enum tfa_error tfa_dev_set_state(struct tfa_device *tfa, enum tfa_state state)
 		if (tfa->verbose) {
 			pr_debug("FAIM disabled (err:%d).\n", err);
 		}
+#endif
 
 		/* Synchonize I/V delay on 96/97 at cold start */
 		if (tfa->sync_iv_delay) {

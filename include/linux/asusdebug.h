@@ -19,10 +19,11 @@ extern phys_addr_t RTB_BUFFER_PA;
 #define PHONE_HANG_LOG_BUFFER   ((void *)((ulong)PRINTK_BUFFER_VA + (ulong)2*PRINTK_BUFFER_SLOT_SIZE) - (ulong)0x3F000)
 #define PHONE_HANG_LOG_SIZE     (0x00080000 + 0x3F000)
 
-/* ASUS_BSP Paul +++ */
+/* ASUS_BSP For upload crash log to DroBox issue */
 #define LOGCAT_BUFFER           ((void *)((ulong)PRINTK_BUFFER_VA + (ulong)SZ_2M))
-#define LOGCAT_BUFFER_SIZE      (SZ_1M)
-/* ASUS_BSP Paul --- */
+#define LOGCAT_BUFFER_SIZE      (SZ_16K)
+#define LAST_KMSG_SIZE          (SZ_16K)
+/* ASUS_BSP --- */
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 ////                  Eventlog mask mechanism
@@ -49,7 +50,9 @@ extern phys_addr_t RTB_BUFFER_PA;
 #define ASUS_VBUS_LOW_IMPEDANCE  "ASUS_VBUS_low_impedance"
 #define ASUS_AICL_SUSPEND "ASUS_AICL_suspend"
 #define ASUS_JEITA_HARD_HOT "ASUS_JEITA_hard_hot"
+#define ASUS_JEITA_SOFT_HOT "ASUS_JEITA_soft_hot"
 #define ASUS_JEITA_HARD_COLD "ASUS_JEITA_hard_cold"
+#define ASUS_USB_WATER_ALERT "ASUS_water_alert"
 #define ASUS_USB_WATER_INVADE "ASUS_USB_water_invade"
 #define ASUS_OUTPUT_OVP "ASUS_Output_OVP"
 //[---]Record the impoartant power event

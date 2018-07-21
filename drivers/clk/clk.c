@@ -647,12 +647,6 @@ static int clk_find_vdd_level(struct clk_core *clk, unsigned long rate)
 {
 	int level;
 
-	if (!strncmp(clk->name, "ahb_clk_src", 11) && rate > 80800000) {
-		pr_err("%s is asked to set rate %lu!! core: %p\n", clk->name, rate, clk);
-		dump_stack();
-		rate = 80800000;
-	}
-
 	for (level = 0; level < clk->num_rate_max; level++)
 		if (rate <= clk->rate_max[level])
 			break;
@@ -793,10 +787,6 @@ static int clk_vote_rate_vdd(struct clk_core *core, unsigned long rate)
 	if (!core->vdd_class)
 		return 0;
 
-	if (!strncmp(core->name, "ahb_clk_src", 11)) {
-		printk("%s wants to VOTE, core->rate %lu.\n", core->name, core->rate);
-	}
-
 	level = clk_find_vdd_level(core, rate);
 	if (level < 0)
 		return level;
@@ -813,10 +803,6 @@ static void clk_unvote_rate_vdd(struct clk_core *core, unsigned long rate)
 
 	if (!core->vdd_class)
 		return;
-
-	if (!strncmp(core->name, "ahb_clk_src", 11)) {
-		printk("%s wants to UNVOTE, core->rate %lu.\n", core->name, core->rate);
-	}
 
 	level = clk_find_vdd_level(core, rate);
 	if (level < 0)
@@ -1305,22 +1291,9 @@ EXPORT_SYMBOL_GPL(clk_get_accuracy);
 static unsigned long clk_recalc(struct clk_core *core,
 				unsigned long parent_rate)
 {
-	unsigned long returnValue = 0;
-
-	if (core->ops->recalc_rate) {
-		returnValue = core->ops->recalc_rate(core->hw, parent_rate);
-		if (!strncmp(core->name, "ahb_clk_src", 11)) {
-			printk("%s has parent rate %lu, recalc rate %lu. recalc addr %p, core %p\n", core->name,
-				parent_rate, returnValue, core->ops->recalc_rate, core);
-		}
-	} else {
-		returnValue = parent_rate;
-		if (!strncmp(core->name, "ahb_clk_src", 11)) {
-			printk("%s has parent rate %lu, but recalc_rate is NULL!!!! use parent istead\n", core->name, parent_rate);
-		}
-	}
-
-	return returnValue;
+	if (core->ops->recalc_rate)
+		return core->ops->recalc_rate(core->hw, parent_rate);
+	return parent_rate;
 }
 
 /**
@@ -1818,10 +1791,6 @@ static int clk_change_rate(struct clk_core *core)
 		clk_unvote_rate_vdd(core, old_rate);
 
 	core->rate = clk_recalc(core, best_parent_rate);
-
-	if (!strncmp(core->name, "ahb_clk_src", 11)) {
-		printk("%s wants to change rate, best parent rate %lu, recalc rate %lu.\n", core->name, best_parent_rate, core->rate);
-	}
 
 	if (core->notifier_count && old_rate != core->rate)
 		__clk_notify(core, POST_RATE_CHANGE, old_rate, core->rate);
