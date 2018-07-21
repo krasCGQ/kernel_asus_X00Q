@@ -647,6 +647,12 @@ static int clk_find_vdd_level(struct clk_core *clk, unsigned long rate)
 {
 	int level;
 
+	if (!strncmp(clk->name, "ahb_clk_src", 11) && rate > 80800000) {
+		pr_err("clk_find_vdd_level: %s is asked to set rate %lu!!\n", clk->name, rate);
+		dump_stack();
+		rate = 80800000;
+	}
+
 	for (level = 0; level < clk->num_rate_max; level++)
 		if (rate <= clk->rate_max[level])
 			break;
@@ -2311,7 +2317,7 @@ EXPORT_SYMBOL_GPL(clk_set_flags);
 
 static struct dentry *rootdir;
 static int inited = 0;
-static u32 debug_suspend;
+static u32 debug_suspend = 1;
 static DEFINE_MUTEX(clk_debug_lock);
 static HLIST_HEAD(clk_debug_list);
 

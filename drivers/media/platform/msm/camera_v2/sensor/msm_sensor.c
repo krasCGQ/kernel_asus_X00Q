@@ -268,6 +268,10 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		return rc;
 	}
 
+if(chipid==0x363) {//for mp imx363 sensor
+	pr_err(" It's  MP imx363 sensor change sensorid to 333 ");
+	chipid=0x333;
+}
 	pr_debug("%s: read id: 0x%x expected id 0x%x:\n",
 			__func__, chipid, slave_info->sensor_id);
 	if (msm_sensor_id_by_mask(s_ctrl, chipid) != slave_info->sensor_id) {

@@ -107,7 +107,16 @@
 #define QPNP_WLED_BOOST_DUTY_MAX_NS	156
 #define QPNP_WLED_DEF_BOOST_DUTY_NS	104
 #define QPNP_WLED_SWITCH_FREQ_MASK	0x70
+#define QPNP_WLED_SWITCH_FREQ_600_KHZ	600
+#define QPNP_WLED_SWITCH_FREQ_640_KHZ	640
+#define QPNP_WLED_SWITCH_FREQ_685_KHZ	685
+#define QPNP_WLED_SWITCH_FREQ_738_KHZ	738
 #define QPNP_WLED_SWITCH_FREQ_800_KHZ	800
+#define QPNP_WLED_SWITCH_FREQ_872_KHZ	872
+#define QPNP_WLED_SWITCH_FREQ_960_KHZ	960
+#define QPNP_WLED_SWITCH_FREQ_1066_KHZ	1066
+#define QPNP_WLED_SWITCH_FREQ_1200_KHZ	1200
+#define QPNP_WLED_SWITCH_FREQ_1371_KHZ	1371
 #define QPNP_WLED_SWITCH_FREQ_1600_KHZ	1600
 #define QPNP_WLED_SWITCH_FREQ_OVERWRITE 0x80
 #define QPNP_WLED_OVP_MASK		GENMASK(1, 0)
@@ -183,8 +192,17 @@
 #define QPNP_WLED_SINK_TEST5_DIG	0x1E
 #define QPNP_WLED_SINK_TEST5_HVG_PULL_STR_BIT	BIT(3)
 
-#define QPNP_WLED_SWITCH_FREQ_800_KHZ_CODE	0x0B
 #define QPNP_WLED_SWITCH_FREQ_1600_KHZ_CODE	0x05
+#define QPNP_WLED_SWITCH_FREQ_1371_KHZ_CODE	0x06
+#define QPNP_WLED_SWITCH_FREQ_1200_KHZ_CODE	0x07
+#define QPNP_WLED_SWITCH_FREQ_1066_KHZ_CODE	0x08
+#define QPNP_WLED_SWITCH_FREQ_960_KHZ_CODE	0x09
+#define QPNP_WLED_SWITCH_FREQ_872_KHZ_CODE	0x0A
+#define QPNP_WLED_SWITCH_FREQ_800_KHZ_CODE	0x0B
+#define QPNP_WLED_SWITCH_FREQ_738_KHZ_CODE	0x0C
+#define QPNP_WLED_SWITCH_FREQ_685_KHZ_CODE	0x0D
+#define QPNP_WLED_SWITCH_FREQ_640_KHZ_CODE	0x0E
+#define QPNP_WLED_SWITCH_FREQ_600_KHZ_CODE	0x0F
 
 #define QPNP_WLED_DISP_SEL_REG(b)	(b + 0x44)
 #define QPNP_WLED_MODULE_RDY_REG(b)	(b + 0x45)
@@ -216,7 +234,7 @@
 #define QPNP_WLED_STR_SIZE		20
 #define QPNP_WLED_MIN_MSLEEP		20
 #define QPNP_WLED_SC_DLY_MS		20
-#define QPNP_WLED_SOFT_START_DLY_US	10000
+#define QPNP_WLED_SOFT_START_DLY_US	500000
 
 #define NUM_SUPPORTED_AVDD_VOLTAGES	6
 #define QPNP_WLED_DFLT_AVDD_MV		7600
@@ -593,6 +611,7 @@ static int qpnp_wled_module_en(struct qpnp_wled *wled,
 				u16 base_addr, bool state)
 {
 	int rc;
+	u8 reg;
 
 	rc = qpnp_wled_masked_write_reg(wled,
 			QPNP_WLED_MODULE_EN_REG(base_addr),
@@ -618,6 +637,16 @@ static int qpnp_wled_module_en(struct qpnp_wled *wled,
 			enable_irq(wled->ovp_irq);
 			wled->ovp_irq_disabled = false;
 		}
+
+		rc = qpnp_wled_read_reg(wled,
+				QPNP_WLED_SWITCH_FREQ_REG(wled->ctrl_base), &reg);
+		if (rc < 0)
+			return rc;
+		rc = qpnp_wled_write_reg(wled,
+				QPNP_WLED_SWITCH_FREQ_REG(wled->ctrl_base), reg);
+		if (rc)
+			return rc;
+
 	} else {
 		if (wled->ovp_irq > 0 && !wled->ovp_irq_disabled) {
 			disable_irq(wled->ovp_irq);
@@ -914,8 +943,33 @@ static ssize_t qpnp_wled_fs_curr_ua_store(struct device *dev,
 	return count;
 }
 
+/* sysfs store function for switch_freq */
+static ssize_t qpnp_wled_switch_freq_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct qpnp_wled *wled = dev_get_drvdata(dev);
+	int data, rc;
+	u8 reg;
+
+	rc = kstrtoint(buf, 16, &data);
+	if (rc)
+		return rc;
+	rc = qpnp_wled_read_reg(wled,
+			QPNP_WLED_SWITCH_FREQ_REG(wled->ctrl_base), &reg);
+	if (rc < 0)
+		return rc;
+	reg &= QPNP_WLED_SWITCH_FREQ_MASK;
+	reg |= (data | QPNP_WLED_SWITCH_FREQ_OVERWRITE);
+	rc = qpnp_wled_write_reg(wled,
+			QPNP_WLED_SWITCH_FREQ_REG(wled->ctrl_base), reg);
+	if (rc)
+		return rc;
+	return count;
+}
+
 /* sysfs attributes exported by wled */
 static struct device_attribute qpnp_wled_attrs[] = {
+	__ATTR(switch_freq, 0664, NULL, qpnp_wled_switch_freq_store),
 	__ATTR(dump_regs, 0664, qpnp_wled_dump_regs_show, NULL),
 	__ATTR(dim_mode, 0664, qpnp_wled_dim_mode_show,
 		qpnp_wled_dim_mode_store),
@@ -1336,9 +1390,10 @@ static irqreturn_t qpnp_wled_ovp_irq_handler(int irq, void *_wled)
 		return IRQ_HANDLED;
 	}
 
-	if (fault_sts & (QPNP_WLED_OVP_FAULT_BIT | QPNP_WLED_ILIM_FAULT_BIT))
-		pr_err("WLED OVP fault detected, int_sts=%x fault_sts= %x\n",
+	if (fault_sts & (QPNP_WLED_OVP_FAULT_BIT | QPNP_WLED_ILIM_FAULT_BIT)) {
+		printk_ratelimited("WLED OVP fault detected, int_sts=%x fault_sts= %x\n",
 			int_sts, fault_sts);
+	}
 
 	if (fault_sts & QPNP_WLED_OVP_FAULT_BIT) {
 		if (wled->auto_calib_enabled && !wled->auto_calib_done) {
@@ -1746,10 +1801,44 @@ static int qpnp_wled_config(struct qpnp_wled *wled)
 		return rc;
 
 	/* Configure the SWITCHING FREQ register */
-	if (wled->switch_freq_khz == QPNP_WLED_SWITCH_FREQ_1600_KHZ)
-		temp = QPNP_WLED_SWITCH_FREQ_1600_KHZ_CODE;
-	else
-		temp = QPNP_WLED_SWITCH_FREQ_800_KHZ_CODE;
+	switch (wled->switch_freq_khz) {
+		case QPNP_WLED_SWITCH_FREQ_1600_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_1600_KHZ_CODE;
+			break;
+		case QPNP_WLED_SWITCH_FREQ_1371_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_1371_KHZ_CODE;
+			break;
+		case QPNP_WLED_SWITCH_FREQ_1200_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_1200_KHZ_CODE;
+			break;
+		case QPNP_WLED_SWITCH_FREQ_1066_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_1066_KHZ_CODE;
+			break;
+		case QPNP_WLED_SWITCH_FREQ_960_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_960_KHZ_CODE;
+			break;
+		case QPNP_WLED_SWITCH_FREQ_872_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_872_KHZ_CODE;
+			break;
+		case QPNP_WLED_SWITCH_FREQ_800_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_800_KHZ_CODE;
+			break;
+		case QPNP_WLED_SWITCH_FREQ_738_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_738_KHZ_CODE;
+			break;
+		case QPNP_WLED_SWITCH_FREQ_685_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_685_KHZ_CODE;
+			break;
+		case QPNP_WLED_SWITCH_FREQ_640_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_640_KHZ_CODE;
+			break;
+		case QPNP_WLED_SWITCH_FREQ_600_KHZ:
+			temp = QPNP_WLED_SWITCH_FREQ_600_KHZ_CODE;
+			break;
+		default:
+			temp = QPNP_WLED_SWITCH_FREQ_600_KHZ_CODE;
+	}
+
 
 	rc = qpnp_wled_read_reg(wled,
 			QPNP_WLED_SWITCH_FREQ_REG(wled->ctrl_base), &reg);

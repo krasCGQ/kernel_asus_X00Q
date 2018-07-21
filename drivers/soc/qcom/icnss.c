@@ -51,6 +51,12 @@
 
 #include "wlan_firmware_service_v01.h"
 
+/* ASUS_BSP+++ for wlan firmware log */
+static int do_wlan_fw_log = 0;
+module_param(do_wlan_fw_log, int, S_IWUSR | S_IRUGO);
+MODULE_PARM_DESC(do_wlan_fw_log, "Is the wlan fw log flag");
+/* ASUS_BSP--- for wlan firmware log */
+
 #ifdef CONFIG_ICNSS_DEBUG
 unsigned long qmi_timeout = 10000;
 module_param(qmi_timeout, ulong, 0600);
@@ -1164,6 +1170,15 @@ bool icnss_is_fw_ready(void)
 		return test_bit(ICNSS_FW_READY, &penv->state);
 }
 EXPORT_SYMBOL(icnss_is_fw_ready);
+
+/* ASUS_BSP+++ for wlan firmware log */
+int wcnss_get_fw_log_flag(void)
+{
+	pr_info("[wcnss]: do_wlan_fw_log=%d.\n", do_wlan_fw_log);
+	return do_wlan_fw_log;
+}
+EXPORT_SYMBOL(wcnss_get_fw_log_flag);
+/* ASUS_BSP--- for wlan firmware log */
 
 int icnss_power_off(struct device *dev)
 {
@@ -2480,7 +2495,8 @@ static int icnss_modem_notifier_nb(struct notifier_block *nb,
 
 	icnss_pr_vdbg("Modem-Notify: event %lu\n", code);
 
-	if (code == SUBSYS_AFTER_SHUTDOWN) {
+	if (code == SUBSYS_AFTER_SHUTDOWN &&
+	    notif->crashed == CRASH_STATUS_ERR_FATAL) {
 		ret = icnss_assign_msa_perm_all(priv,
 						ICNSS_MSA_PERM_DUMP_COLLECT);
 		if (!ret) {
@@ -2638,7 +2654,10 @@ event_post:
 	clear_bit(ICNSS_HOST_TRIGGERED_PDR, &priv->state);
 
 	fw_down_data.crashed = event_data->crashed;
-	icnss_call_driver_uevent(priv, ICNSS_UEVENT_FW_DOWN, &fw_down_data);
+	if (test_bit(ICNSS_DRIVER_PROBED, &priv->state) &&
+	      !test_bit(ICNSS_PD_RESTART, &priv->state))
+		icnss_call_driver_uevent(priv, ICNSS_UEVENT_FW_DOWN,
+					 &fw_down_data);
 	icnss_driver_event_post(ICNSS_DRIVER_EVENT_PD_SERVICE_DOWN,
 				ICNSS_EVENT_SYNC, event_data);
 done:

@@ -1713,6 +1713,18 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 	int rc;
 	int duty_us, duty_ns, period_us;
 
+	if((led->id == 4) && (led->cdev.brightness == 254)){
+		if(g_ASUS_hwID >= ZE620KL_PR){
+			led->cdev.brightness = 50;
+		}else{
+			led->cdev.brightness = 255;
+		}
+	}else if((led->id == 4) && (led->cdev.brightness == 255)){
+		if(g_ASUS_hwID >= ZE620KL_PR){
+			led->cdev.brightness = 160;
+		}
+	}
+
 	if (led->cdev.brightness) {
 		if (!led->rgb_cfg->pwm_cfg->blinking)
 			led->rgb_cfg->pwm_cfg->mode =

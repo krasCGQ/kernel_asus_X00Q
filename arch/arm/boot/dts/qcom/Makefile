@@ -179,6 +179,18 @@ endif
 
 dtb-$(CONFIG_ARCH_MSMHAMSTER) += msmhamster-rumi.dtb
 
+ifeq ($(ASUS_BUILD_PROJECT),ZE620KL)
+dtb-$(CONFIG_ARCH_SDM660) += \
+	sdm660-cdp.dtb \
+	sdm660-mtp.dtb \
+	sdm660-qrd.dtb \
+	ara-sr-sdm636-qrd.dtb \
+	ara-sr-oc-sdm636-qrd.dtb \
+	ara-er-sdm636-qrd.dtb \
+	ara-er-oc-sdm636-qrd.dtb
+
+else
+
 dtb-$(CONFIG_ARCH_SDM660) += sdm660-sim.dtb \
 	sdm660-internal-codec-cdp.dtb \
 	sdm660-internal-codec-mtp.dtb \
@@ -286,6 +298,8 @@ dtb-$(CONFIG_ARCH_SDM630) += sdm630-rumi.dtb \
 	sdm630-headset-jacktype-no-rcm.dtb \
 	sdm630-pm660a-headset-jacktype-no-cdp.dtb \
 	sdm630-pm660a-headset-jacktype-no-rcm.dtb
+
+endif #end of ifeq ($(ASUS_BUILD_PROJECT),ZE620KL)
 
 ifeq ($(CONFIG_ARM64),y)
 always          := $(dtb-y)

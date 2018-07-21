@@ -373,6 +373,9 @@ static int fw_get_filesystem_firmware(struct device *device,
 	int i, len;
 	int rc = -ENOENT;
 	char *path;
+	/* ASUS BSP : For Change ADSP FW loading path to vendor/firmware +++*/
+	char fw_name[5];
+	/* ASUS BSP ---*/
 
 	path = __getname();
 	if (!path)
@@ -391,6 +394,14 @@ static int fw_get_filesystem_firmware(struct device *device,
 			rc = -ENAMETOOLONG;
 			break;
 		}
+
+		/* ASUS BSP : For Change ADSP FW loading path to vendor/firmware */
+		snprintf(fw_name, 5, "%s", buf->fw_id);
+		if (!strcmp(fw_name, "adsp")  && i == 1 ) {			
+			snprintf(path, PATH_MAX, "%s/%s", "vendor/firmware/q6_sdm636_image", buf->fw_id);
+			dev_err(device, "[ADSP] Try to load firmware : %s \n", path);
+		}
+		/* ASUS BSP ---*/
 
 		file = filp_open(path, O_RDONLY, 0);
 		if (IS_ERR(file))

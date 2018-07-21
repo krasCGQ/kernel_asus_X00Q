@@ -76,6 +76,16 @@
 #define BLANK_FLAG_ULP	FB_BLANK_NORMAL
 #endif
 
+//ASUS BSP Display +++
+#define ASUS_LCD_COMMIT_FRAMES_COUNT 5
+int asus_lcd_display_commit_cnt = ASUS_LCD_COMMIT_FRAMES_COUNT;
+bool system_doing_shutdown = false; /* To notify shutdown doing reset */
+u32 g_update_bl = 0; /* ASUS BSP Display, to record bl level from HAL*/
+extern void asus_tcon_cmd_set(char *cmd, short len);
+extern char asus_lcd_cabc_mode[2];
+extern int g_ftm_mode;
+//ASUS BSP Display ---
+
 /*
  * Time period for fps calulation in micro seconds.
  * Default value is set to 1 sec.
@@ -91,6 +101,25 @@ static u32 mdss_fb_pseudo_palette[16] = {
 	0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
 	0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff
 };
+
+uint32_t Lut_fi[33] = {
+					0, 69, 147, 234, 328,
+					429, 537, 650, 768, 897,
+					1043, 1201, 1368, 1540, 1713,
+					1884, 2048, 2212, 2383, 2556,
+					2728, 2895, 3052, 3199, 3328,
+					3446, 3559, 3666, 3768, 3862,
+					3948, 4026, 4095
+					};
+uint32_t Lut_cc[33] = {
+					0x000000FF, 0x00000116, 0x0000012E, 0x00000146, 0x0000015E,
+					0x00000176, 0x0000018E, 0x000001A6, 0x000001BE, 0x000001D6,
+					0x000001EE, 0x00000205, 0x0000021D, 0x00000235, 0x0000024D,
+					0x00000265, 0x0000027D, 0x00000295, 0x000002AC, 0x000002C4,
+					0x000002DC, 0x000002F3, 0x0000030B, 0x00000323, 0x0000033A,
+					0x00000352, 0x0000036A, 0x00000381, 0x00000399, 0x000003B1,
+					0x000003C8, 0x000003E0, 0x000003F8
+					};
 
 static struct msm_mdp_interface *mdp_instance;
 
@@ -292,6 +321,7 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
 				mfd->panel_info->brightness_max);
 
+	pr_info("%s: brightness: android %d, dcs %d", __func__, value, bl_lvl);
 	if (!bl_lvl && value)
 		bl_lvl = 1;
 
@@ -1245,6 +1275,7 @@ static int mdss_fb_probe(struct platform_device *pdev)
 	struct mdss_panel_data *pdata;
 	struct fb_info *fbi;
 	struct mdss_overlay_private *mdp5_data = NULL;
+	struct msmfb_mdp_pp mdp_pp;
 	int rc;
 
 	if (fbi_list_index >= MAX_FBI_LIST)
@@ -1396,6 +1427,35 @@ static int mdss_fb_probe(struct platform_device *pdev)
 			pr_err("failed to register input handler\n");
 
 	INIT_DELAYED_WORK(&mfd->idle_notify_work, __mdss_fb_idle_notify_work);
+
+#if defined(ASUS_FTM_BUILD) || defined(ASUS_FTM)
+	printk(KERN_EMERG "[DISP] Disable True2life feature\n");
+	return rc;
+#endif
+	if(mfd->index == 0) {
+		printk(KERN_EMERG "[DISP] Set True2life initail value for FB0\n");
+		memset(&mdp_pp, 0x00 , sizeof(struct msmfb_mdp_pp));
+		mdp_pp.data.ad_init_cfg.params.init.i_control[0] = 0x07;
+		mdp_pp.data.ad_init_cfg.params.init.i_control[1] = 198;
+		mdp_pp.data.ad_init_cfg.params.init.black_lvl = 0;
+		mdp_pp.data.ad_init_cfg.params.init.white_lvl = 0x3FF;
+		mdp_pp.data.ad_init_cfg.params.init.var = 0x65;
+		mdp_pp.data.ad_init_cfg.params.init.limit_ampl = 240;
+		mdp_pp.data.ad_init_cfg.params.init.i_dither = 0;
+		mdp_pp.data.ad_init_cfg.params.init.slope_max = 0x60;
+		mdp_pp.data.ad_init_cfg.params.init.slope_min = 32;
+		mdp_pp.data.ad_init_cfg.params.init.dither_ctl = 0x05;
+		mdp_pp.data.ad_init_cfg.params.init.format = 0x03;
+		mdp_pp.data.ad_init_cfg.params.init.auto_size = 0;
+		mdp_pp.data.ad_init_cfg.params.init.frame_w = 1080;
+		mdp_pp.data.ad_init_cfg.params.init.frame_h = 1920;
+		memcpy(mdp_pp.data.ad_init_cfg.params.init.asym_lut, Lut_fi, sizeof(uint32_t) * 33);
+		memcpy(mdp_pp.data.ad_init_cfg.params.init.color_corr_lut, Lut_cc, sizeof(uint32_t) * 33);
+		mdp_pp.op = mdp_op_ad_cfg;
+		mdp_pp.data.ad_init_cfg.ops = MDP_PP_OPS_ENABLE | MDP_PP_AD_INIT;
+		rc = mdss_mdp_ad_config(mfd, &mdp_pp.data.ad_init_cfg);
+		rc =0;
+	}
 
 	return rc;
 }
@@ -1749,6 +1809,7 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 			if (mfd->bl_level != bkl_lvl)
 				bl_notify_needed = true;
 			pr_debug("backlight sent to panel :%d\n", temp);
+			g_update_bl = temp;
 			pdata->set_backlight(pdata, temp);
 			mfd->bl_level = bkl_lvl;
 			mfd->bl_level_scaled = temp;
@@ -1783,6 +1844,7 @@ void mdss_fb_update_backlight(struct msm_fb_data_type *mfd)
 				mdss_fb_bl_update_notify(mfd,
 					NOTIFY_TYPE_BL_AD_ATTEN_UPDATE);
 			mdss_fb_bl_update_notify(mfd, NOTIFY_TYPE_BL_UPDATE);
+			g_update_bl = temp;
 			pdata->set_backlight(pdata, temp);
 			mfd->bl_level_scaled = mfd->unset_bl_level;
 			mfd->allow_bl_update = true;
@@ -2079,6 +2141,9 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 		req_power_state = MDSS_PANEL_POWER_OFF;
 		pr_debug("blank powerdown called\n");
 		ret = mdss_fb_blank_blank(mfd, req_power_state);
+		//ASUS BSP Display +++
+		asus_lcd_display_commit_cnt = ASUS_LCD_COMMIT_FRAMES_COUNT;
+		//ASUS BSP Display ---
 		break;
 	}
 
@@ -2896,6 +2961,9 @@ static int mdss_fb_release_all(struct fb_info *info, bool release_all)
 		mdss_fb_set_backlight(mfd, 0);
 		mutex_unlock(&mfd->bl_lock);
 
+		/* about to turn off display. set shutdown hint */
+		system_doing_shutdown = true;
+
 		ret = mdss_fb_blank_sub(FB_BLANK_POWERDOWN, info,
 			mfd->op_enable);
 		if (ret) {
@@ -3495,6 +3563,11 @@ int mdss_fb_atomic_commit(struct fb_info *info,
 
 	if (wait_for_finish)
 		ret = mdss_fb_pan_idle(mfd);
+
+	if (asus_lcd_display_commit_cnt > 0) {
+		pr_err("[Display] fb%d commit countdown: %d\n", info->node, asus_lcd_display_commit_cnt);
+		asus_lcd_display_commit_cnt--;
+	}
 
 end:
 	if (ret && (mfd->panel.type == WRITEBACK_PANEL) && wb_change)
@@ -4962,6 +5035,7 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	struct mdp_buf_sync buf_sync;
 	unsigned int dsi_mode = 0;
 	struct mdss_panel_data *pdata = NULL;
+	int panel_cabc_mode = Still_MODE;	// ASUS BSP Display +++
 
 	if (!info || !info->par)
 		return -EINVAL;
@@ -5022,6 +5096,22 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	case MSMFB_DISPLAY_COMMIT:
 		ret = mdss_fb_display_commit(info, argp);
 		break;
+
+	// ASUS BSP Display +++
+	case MSMFB_CABC_CTRL:
+		ret = copy_from_user(&panel_cabc_mode, argp, sizeof(panel_cabc_mode));
+		if (ret) {
+			pr_err("%s: CABC mode(%d) set failed\n", __func__, panel_cabc_mode);
+			goto exit;
+		}
+		if (g_ftm_mode) {
+			pr_err("[Display] Factory mode: CABC isn't allow to set\n");
+			break;
+		}
+        asus_lcd_cabc_mode[1] = panel_cabc_mode;
+        asus_tcon_cmd_set(asus_lcd_cabc_mode, ARRAY_SIZE(asus_lcd_cabc_mode));
+		break;
+	// ASUS BSP Display ---
 
 	case MSMFB_LPM_ENABLE:
 		ret = copy_from_user(&dsi_mode, argp, sizeof(dsi_mode));

@@ -119,6 +119,16 @@ unsigned int tune5;
 module_param(tune5, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(tune5, "QUSB PHY TUNE5");
 
+// ASUS_BSP Hardcode Eye-Diagram Parameters +++
+unsigned int default_device_parameter_1;
+unsigned int default_device_parameter_2;
+unsigned int default_device_parameter_3;
+unsigned int default_device_parameter_4;
+unsigned int default_host_parameter_1;
+unsigned int default_host_parameter_2;
+unsigned int default_host_parameter_3;
+unsigned int default_host_parameter_4;
+// ASUS_BSP Hardcode Eye-Diagram Parameters ---
 
 struct qusb_phy {
 	struct usb_phy		phy;
@@ -138,6 +148,7 @@ struct qusb_phy {
 	int			vdd_levels[3]; /* none, low, high */
 	int			init_seq_len;
 	int			*qusb_phy_init_seq;
+	int			*qusb_phy_init_host_seq;
 	u32			major_rev;
 
 	u32			tune2_val;
@@ -496,6 +507,7 @@ static int qusb_phy_init(struct usb_phy *phy)
 	bool pll_lock_fail = false;
 
 	dev_dbg(phy->dev, "%s\n", __func__);
+	printk("%s+++\n",__func__);
 
 	ret = qusb_phy_enable_power(qphy, true);
 	if (ret)
@@ -570,9 +582,18 @@ static int qusb_phy_init(struct usb_phy *phy)
 	if (qphy->ref_clk_base)
 		reset_val = readl_relaxed(qphy->base + QUSB2PHY_PLL_TEST);
 
-	if (qphy->qusb_phy_init_seq)
-		qusb_phy_write_seq(qphy->base, qphy->qusb_phy_init_seq,
-				qphy->init_seq_len, 0);
+	// ASUS_BSP "Support using different set of PHY parameters for USB Host"
+	if(qphy->phy.flags & PHY_HOST_MODE) {
+		printk("QUSB PHY init using host parameters\n");
+		if (qphy->qusb_phy_init_host_seq)
+			qusb_phy_write_seq(qphy->base, qphy->qusb_phy_init_host_seq,
+					qphy->init_seq_len, 0);
+	} else {
+		printk("QUSB PHY init using client parameters\n");
+		if (qphy->qusb_phy_init_seq)
+			qusb_phy_write_seq(qphy->base, qphy->qusb_phy_init_seq,
+					qphy->init_seq_len, 0);
+	}
 
 	/*
 	 * Check for EFUSE value only if tune2_efuse_reg is available
@@ -589,9 +610,66 @@ static int qusb_phy_init(struct usb_phy *phy)
 				qphy->base + QUSB2PHY_PORT_TUNE2);
 	}
 
+	//  ********** ASUS_BSP Hardcode Eye-Diagram Parameters **********
+	//  ZE620KL_SR : 0
+	//  ZE620KL_ER : 2
+	pr_info("[USB] %s(): Current hardware ID : (%d)", __func__, g_ASUS_hwID);
+	switch(g_ASUS_hwID){
+		case ZE620KL_ER:
+			default_device_parameter_1=0xf8;
+			default_device_parameter_2=0x53;
+			default_device_parameter_3=0x81;
+			default_device_parameter_4=0xcf;
+			default_host_parameter_1=0xf8;
+			default_host_parameter_2=0x13;
+			default_host_parameter_3=0x81;
+			default_host_parameter_4=0xcf;
+		break;
+		case ZE620KL_SR:
+			default_device_parameter_1=0xf8;
+			default_device_parameter_2=0x13;
+			default_device_parameter_3=0x81;
+			default_device_parameter_4=0xcf;
+			default_host_parameter_1=0xf8;
+			default_host_parameter_2=0x13;
+			default_host_parameter_3=0x81;
+			default_host_parameter_4=0xcf;
+		break;
+		default:
+			default_device_parameter_1=0xf8;
+			default_device_parameter_2=0x53;
+			default_device_parameter_3=0x81;
+			default_device_parameter_4=0xcf;
+			default_host_parameter_1=0xf8;
+			default_host_parameter_2=0x13;
+			default_host_parameter_3=0x81;
+			default_host_parameter_4=0xcf;
+		break;
+	}
+	if(qphy->phy.flags & PHY_HOST_MODE) {
+		pr_info("[USB] %s():host default modparams val:0x%x %x %x %x\n",
+				__func__, default_host_parameter_1, default_host_parameter_2,
+				default_host_parameter_3, default_host_parameter_4);
+		writel_relaxed(default_host_parameter_1, qphy->base + QUSB2PHY_PORT_TUNE1);
+		writel_relaxed(default_host_parameter_2, qphy->base + QUSB2PHY_PORT_TUNE2);
+		writel_relaxed(default_host_parameter_3, qphy->base + QUSB2PHY_PORT_TUNE3);
+		writel_relaxed(default_host_parameter_4, qphy->base + QUSB2PHY_PORT_TUNE4);
+	}
+	else
+	{
+		pr_info("[USB] %s():device default modparams val:0x%x %x %x %x\n",
+				__func__, default_device_parameter_1, default_device_parameter_2,
+				default_device_parameter_3, default_device_parameter_4);
+		writel_relaxed(default_device_parameter_1, qphy->base + QUSB2PHY_PORT_TUNE1);
+		writel_relaxed(default_device_parameter_2, qphy->base + QUSB2PHY_PORT_TUNE2);
+		writel_relaxed(default_device_parameter_3, qphy->base + QUSB2PHY_PORT_TUNE3);
+		writel_relaxed(default_device_parameter_4, qphy->base + QUSB2PHY_PORT_TUNE4);
+	}
+	//  ********** ASUS_BSP Hardcode Eye-Diagram Parameters **********
+
 	/* If tune modparam set, override tune value */
 
-	pr_debug("%s():userspecified modparams TUNEX val:0x%x %x %x %x %x\n",
+	pr_info("[USB] %s():userspecified modparams TUNEX val:0x%x %x %x %x %x\n",
 				__func__, tune1, tune2, tune3, tune4, tune5);
 	if (tune1)
 		writel_relaxed(tune1,
@@ -615,6 +693,13 @@ static int qusb_phy_init(struct usb_phy *phy)
 
 	/* ensure above writes are completed before re-enabling PHY */
 	wmb();
+
+	printk("[USB] Read Param:%02x, Param2:%02x, Param3:%02x, Param4:%02x, Param5:%02x\n",
+				readb_relaxed(qphy->base + QUSB2PHY_PORT_TUNE1),
+				readb_relaxed(qphy->base + QUSB2PHY_PORT_TUNE2),
+				readb_relaxed(qphy->base + QUSB2PHY_PORT_TUNE3),
+				readb_relaxed(qphy->base + QUSB2PHY_PORT_TUNE4),
+				readb_relaxed(qphy->base + QUSB2PHY_PORT_TUNE5));
 
 	/* Enable the PHY */
 	if (qphy->major_rev < 2)
@@ -668,6 +753,8 @@ static int qusb_phy_init(struct usb_phy *phy)
 		dev_err(phy->dev, "QUSB PHY PLL LOCK fails:%x\n", reg);
 		WARN_ON(1);
 	}
+
+	printk("%s---\n",__func__);
 
 	return 0;
 }
@@ -1075,7 +1162,7 @@ static int qusb_phy_probe(struct platform_device *pdev)
 	}
 
 	size = 0;
-	of_get_property(dev->of_node, "qcom,qusb-phy-init-seq", &size);
+	of_get_property(dev->of_node, "qcom,qusb-phy-init-device-seq", &size);
 	if (size) {
 		qphy->qusb_phy_init_seq = devm_kzalloc(dev,
 						size, GFP_KERNEL);
@@ -1088,11 +1175,34 @@ static int qusb_phy_probe(struct platform_device *pdev)
 			}
 
 			of_property_read_u32_array(dev->of_node,
-				"qcom,qusb-phy-init-seq",
+				"qcom,qusb-phy-init-device-seq",
 				qphy->qusb_phy_init_seq,
 				qphy->init_seq_len);
 		} else {
 			dev_err(dev, "error allocating memory for phy_init_seq\n");
+		}
+	}
+
+	// ASUS_BSP "Support using different set of PHY parameters for USB Host"
+	size = 0;
+	of_get_property(dev->of_node, "qcom,qusb-phy-init-host-seq", &size);
+	if (size) {
+		qphy->qusb_phy_init_host_seq = devm_kzalloc(dev,
+						size, GFP_KERNEL);
+		if (qphy->qusb_phy_init_host_seq) {
+			qphy->init_seq_len =
+				(size / sizeof(*qphy->qusb_phy_init_host_seq));
+			if (qphy->init_seq_len % 2) {
+				dev_err(dev, "invalid init_seq_len\n");
+				return -EINVAL;
+			}
+
+			of_property_read_u32_array(dev->of_node,
+				"qcom,qusb-phy-init-host-seq",
+				qphy->qusb_phy_init_host_seq,
+				qphy->init_seq_len);
+		} else {
+			dev_err(dev, "error allocating memory for phy_init_host_seq\n");
 		}
 	}
 

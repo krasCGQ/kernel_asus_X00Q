@@ -14,6 +14,47 @@
 #include <linux/dynamic_debug.h>
 #include <asm/byteorder.h>
 #include <uapi/linux/kernel.h>
+#include <linux/asusdebug.h>
+
+//ASUS_BSP: +++
+enum {
+	ARA_LCD_AUO = 0,
+	AQU_LCD_BOE,
+	TITAN_LCD_TM,
+	TITAN_LCD_BOE,
+};
+extern int g_asus_lcdID;
+//ASUS_BSP: ---
+
+// +++ ASUS_BSP : add for miniporting
+enum DEVICE_HWID
+{
+	//ZE620KL
+	ZE620KL_SR = 0x0,
+	ZE620KL_ER = 0x2,
+	ZE620KL_ER2 = 0x3,
+	ZE620KL_PR = 0x4,
+	ZE620KL_PR2 = 0x5,
+	ZE620KL_MP = 0x7,
+
+	ZE620KL_UNKNOWN = 0xFF
+};
+extern enum DEVICE_HWID g_ASUS_hwID;
+
+enum DEVICE_PRJID
+{
+	//ZE620KL PRJ
+	ZE620KL_660_PRJ_ID = 0x4,
+	ZE620KL_636_PRJ_ID = 0x6,
+
+	UNKNOWN_PRJ = 0xFF
+};
+extern enum DEVICE_HWID g_ASUS_prjID;
+// --- ASUS_BSP : add for miniporting
+
+// ASUS_BSP +++ Jiunhau_Wang [ZE554KL][DM][NA][NA] get permissive status
+extern int permissive_enable;
+// ASUS_BSP --- Jiunhau_Wang [ZE554KL][DM][NA][NA] get permissive status
 
 #define USHRT_MAX	((u16)(~0U))
 #define SHRT_MAX	((s16)(USHRT_MAX>>1))

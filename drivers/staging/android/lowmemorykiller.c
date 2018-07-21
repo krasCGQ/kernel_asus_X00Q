@@ -49,6 +49,8 @@
 #include <linux/cpuset.h>
 #include <linux/vmpressure.h>
 #include <linux/zcache.h>
+#include <linux/slab.h>
+#include <linux/kmod.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/almk.h>
@@ -61,6 +63,8 @@
 
 #define CREATE_TRACE_POINTS
 #include "trace/lowmemorykiller.h"
+
+struct work_struct __dumpthread_work;
 
 static uint32_t lowmem_debug_level = 1;
 static short lowmem_adj[6] = {
@@ -489,6 +493,13 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			continue;
 
 		oom_score_adj = p->signal->oom_score_adj;
+
+		if(strstr(p->comm,"launcher") != NULL  && min_score_adj > 200){
+			task_unlock(p);
+			//printk("lowmemorykiller: Don't kill launcher when min_socre_adj > 200\n");
+			continue;
+		}
+
 		if (oom_score_adj < min_score_adj) {
 			task_unlock(p);
 			continue;
@@ -595,10 +606,26 @@ static struct shrinker lowmem_shrinker = {
 	.flags = SHRINKER_LMK
 };
 
+void dumpthread_func(struct work_struct *work)
+{
+	int ret = -1;
+	char cmdpath[] = "/system/vendor/bin/recvkernelevt";
+	char *argv[8] = {cmdpath, "dumpbusythread",NULL};
+	char *envp[] = {"HOME=/", "PATH=/sbin:/system/bin:/system/sbin:/vendor/bin", NULL};
+	printk("[Debug+++] dumpthread  on userspace\n");
+	ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+	printk("[Debug---] dumpthread  on userspace, ret = %d\n", ret);
+
+	return;
+}
+
 static int __init lowmem_init(void)
 {
 	register_shrinker(&lowmem_shrinker);
 	vmpressure_notifier_register(&lmk_vmpr_nb);
+
+	INIT_WORK(&__dumpthread_work, dumpthread_func);
+
 	return 0;
 }
 device_initcall(lowmem_init);
