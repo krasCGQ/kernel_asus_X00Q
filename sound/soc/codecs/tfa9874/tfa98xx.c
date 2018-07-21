@@ -2169,6 +2169,9 @@ static void tfa98xx_container_loaded(const struct firmware *cont, void *context)
 		ret = tfa98xx_tfa_start(tfa98xx, tfa98xx->profile, tfa98xx->vstep);
 		if (ret == Tfa98xx_Error_Not_Supported)
 			tfa98xx->dsp_fw_state = TFA98XX_DSP_FW_FAIL;
+#ifdef TFA9874_NONDSP_STEREO
+		tfa_dev_stop(tfa98xx->tfa);
+#endif
 		mutex_unlock(&tfa98xx->dsp_lock);
 	}
 

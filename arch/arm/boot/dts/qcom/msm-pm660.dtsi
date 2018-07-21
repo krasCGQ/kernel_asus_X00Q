@@ -692,6 +692,7 @@
 			qcom,fg-esr-timer-awake = <96 96>;
 			qcom,fg-esr-timer-asleep = <256 256>;
 			qcom,fg-esr-timer-charging = <0 96>;
+			qcom,fg-rsense-sel = <0>; 
 			qcom,cycle-counter-en;
 
 			qcom,fg-recharge-voltage = <4150>;  //WeiYu ++ for HW recharge

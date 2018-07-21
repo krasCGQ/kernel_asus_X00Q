@@ -494,9 +494,14 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 
 		oom_score_adj = p->signal->oom_score_adj;
 
-		if(strstr(p->comm,"launcher") != NULL  && min_score_adj > 200){
+		if(strstr(p->comm,"launcher") != NULL  && min_score_adj > 100){
 			task_unlock(p);
-			//printk("lowmemorykiller: Don't kill launcher when min_socre_adj > 200\n");
+			//printk("lowmemorykiller: Don't kill launcher when min_socre_adj > 100\n");
+			continue;
+		}
+		if(strstr(p->comm,"process.media") != NULL && min_score_adj > 100){
+			task_unlock(p);
+			//printk("lowmemorykiller: Don't kill media when min_socre_adj > 100\n");
 			continue;
 		}
 

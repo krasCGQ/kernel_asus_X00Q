@@ -90,7 +90,7 @@ static struct smb_params v1_params = {
 		.name	= "usb otg current limit",
 		.reg	= OTG_CURRENT_LIMIT_CFG_REG,
 		.min_u	= 250000,
-		.max_u	= 2000000,
+		.max_u	= 750000,
 		.step_u	= 250000,
 	},
 	.dc_icl			= {
@@ -211,6 +211,7 @@ struct smb_charger *smbchg_dev;
 struct gpio_control *global_gpio;	//global gpio_control
 struct timespec last_jeita_time;
 struct wake_lock asus_chg_lock;
+struct wake_lock asus_charger_lock;
 struct wake_lock asus_water_lock;
 extern bool g_usb_alert_mode;		//ASUS_BSP Austin_T : add usb alert mode trigger
 extern bool g_low_impedance_mode;	//ASUS_BSP Austin_T : add low impedance mode trigger
@@ -255,6 +256,8 @@ module_param_named(
 
 #define MICRO_1P5A		1500000
 #define MICRO_P1A		100000
+#define MICRO_P75A		750000
+#define MICRO_P5A		500000
 #define OTG_DEFAULT_DEGLITCH_TIME_MS	50
 #define MIN_WD_BARK_TIME		16
 #define DEFAULT_WD_BARK_TIME		64
@@ -308,7 +311,7 @@ static int smb2_parse_dt(struct smb2 *chip)
 	rc = of_property_read_u32(node,
 				"qcom,otg-cl-ua", &chg->otg_cl_ua);
 	if (rc < 0)
-		chg->otg_cl_ua = MICRO_1P5A;
+		chg->otg_cl_ua = MICRO_P75A;
 
 	rc = of_property_read_u32(node,
 				"qcom,dc-icl-ua", &chip->dt.dc_icl_ua);
@@ -2937,6 +2940,8 @@ void static create_chargerIC_status_proc_file(void)
 //bsp WeiYu: interface for AMAX drawing "+" icon +++
 
 struct switch_dev qc_stat;
+#define SWITCH_10W_NOT_QUICK_CHARGING	4	//these arg number are requested by AMAX
+#define SWITCH_10W_QUICK_CHARGING		3
 #define SWITCH_QC_NOT_QUICK_CHARGING	2	//these arg number are requested by AMAX
 #define SWITCH_QC_QUICK_CHARGING		1
 #define SWITCH_QC_OTHER	0
@@ -2956,12 +2961,13 @@ void register_qc_stat(void)
 }
 
 extern int asus_get_prop_batt_capacity(struct smb_charger *chg);
-
+extern bool high_power_pd(void);
 void set_qc_stat(union power_supply_propval *val)
 {
 
 	int stat,set;
 	stat = val->intval;
+/*	WeiYu++ mark this due to new chg-icon spec
 
 	//In this function, we care only quick charge(qc) AC 
 	if (asus_CHG_TYPE != ASUS_QC_AC_ID){
@@ -2970,29 +2976,71 @@ void set_qc_stat(union power_supply_propval *val)
 		switch_set_state(&qc_stat, set);
 		return;
 	}
+*/
 
-	switch(stat){
-		//"qc" stat happends in charger mode only, refer to smblib_get_prop_batt_status
-		case POWER_SUPPLY_STATUS_CHARGING:
-		case POWER_SUPPLY_STATUS_NOT_CHARGING:
-		case POWER_SUPPLY_STATUS_QUICK_CHARGING:
-		case POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING:
-			if(asus_get_prop_batt_capacity(smbchg_dev) <= QC_STATE_SOC_THD) 
-				set = SWITCH_QC_QUICK_CHARGING;
-			else 
-				set = SWITCH_QC_NOT_QUICK_CHARGING;
-					
-			switch_set_state(&qc_stat, set);
-			CHG_DBG("stat: %d, switch: %d\n",stat, set);
-			break;
+	if(asus_CHG_TYPE == ASUS_QC_AC_ID ||
+		asus_CHG_TYPE == ASUS_ABOVE_13P5W_ID||
+		high_power_pd()){
 
-		default:
-			set =SWITCH_QC_OTHER;
-			switch_set_state(&qc_stat, set);
-			break;
+		switch(stat){
+			//"qc" stat happends in charger mode only, refer to smblib_get_prop_batt_status
+			case POWER_SUPPLY_STATUS_CHARGING:
+			case POWER_SUPPLY_STATUS_NOT_CHARGING:
+			case POWER_SUPPLY_STATUS_QUICK_CHARGING:
+			case POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING:
+				if(asus_get_prop_batt_capacity(smbchg_dev) <= QC_STATE_SOC_THD) 
+					set = SWITCH_QC_QUICK_CHARGING;
+				else 
+					set = SWITCH_QC_NOT_QUICK_CHARGING;
+						
+				switch_set_state(&qc_stat, set);
+				CHG_DBG("stat: %d, switch: %d (13.5W)\n",stat, set);
+				break;
+
+			default:
+				set =SWITCH_QC_OTHER;
+				switch_set_state(&qc_stat, set);
+				break;
+
+		}
+	
+	}
+	else if(asus_CHG_TYPE == ASUS_NORMAL_AC_ID ||
+		asus_CHG_TYPE == ASUS_10W_ID){
+
+		switch(stat){
+			//"qc" stat happends in charger mode only, refer to smblib_get_prop_batt_status
+			case POWER_SUPPLY_STATUS_CHARGING:
+			case POWER_SUPPLY_STATUS_NOT_CHARGING:
+			case POWER_SUPPLY_STATUS_10W_QUICK_CHARGING:
+			case POWER_SUPPLY_STATUS_10W_NOT_QUICK_CHARGING:
+			// for work around to charging icon in COS, refer to smblib_get_prop_batt_status
+			case POWER_SUPPLY_STATUS_QUICK_CHARGING:
+			case POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING:				
+				if(asus_get_prop_batt_capacity(smbchg_dev) <= QC_STATE_SOC_THD) 
+					set = SWITCH_10W_QUICK_CHARGING;
+				else 
+					set = SWITCH_10W_NOT_QUICK_CHARGING;
+						
+				switch_set_state(&qc_stat, set);
+				CHG_DBG("stat: %d, switch: %d (10W)\n",stat, set);
+				break;
+
+			default:
+				set =SWITCH_QC_OTHER;
+				switch_set_state(&qc_stat, set);
+				break;
+
+		}
+
 
 	}
-
+	else{
+		set =SWITCH_QC_OTHER;
+		//CHG_DBG("stat: %d, switch: %d\n",stat, set);
+		switch_set_state(&qc_stat, set);
+		return;
+	}	
 	//CHG_DBG("stat: %d, switch: %d\n",stat, set);
 	return;			
 }
@@ -3093,12 +3141,14 @@ static irqreturn_t usb_temp_alert_interrupt(int irq, void *dev_id)
 	int status = gpio_get_value_cansleep(global_gpio->USB_THERMAL_ALERT);
 	int rc;
 	int usb_otg_present;
-	u8 reg;
+	u8 reg, otg_reg;
 	bool skip= false;
 
 	CHG_DBG_EVT("%s: Get USB_Thermal_Status : %d\n", __func__, status);
 	rc = smblib_read(smbchg_dev, TYPE_C_STATUS_4_REG, &reg);
 	usb_otg_present = reg & CC_ATTACHED_BIT;
+
+	smblib_read(smbchg_dev, CMD_OTG_REG, &otg_reg);
 	
 	//let COS keep discharging while alert dismiss
 	if(g_Charger_mode && usb_alert_flag==1)
@@ -3111,6 +3161,9 @@ static irqreturn_t usb_temp_alert_interrupt(int irq, void *dev_id)
 		if (usb_otg_present){
 			switch_set_state(&usb_alert_dev, THM_ALERT_WITH_AC);
 			smblib_set_usb_suspend(smbchg_dev, 1);
+		//follow spec: ring bell with otg.
+		} else if(otg_reg & OTG_EN_BIT){
+			switch_set_state(&usb_alert_dev, THM_ALERT_WITH_AC);
 		}
 		else		
 			switch_set_state(&usb_alert_dev, THM_ALERT_NO_AC);	
@@ -3416,7 +3469,7 @@ void asus_probe_pmic_settings(struct smb_charger *chg)
 	}
 //A-8:0x1152
 	rc = smblib_masked_write(chg, OTG_CURRENT_LIMIT_CFG_REG,
-			OTG_CURRENT_LIMIT_MASK, 0x05);
+			OTG_CURRENT_LIMIT_MASK, 0x02);
 	if (rc < 0) {
 		dev_err(chg->dev, "Couldn't set default OTG_CURRENT_LIMIT_CFG_REG rc=%d\n", rc);
 	}
@@ -3481,6 +3534,7 @@ static int smb2_probe(struct platform_device *pdev)
 	chg->name = "PMI";
 
 	wake_lock_init(&asus_chg_lock, WAKE_LOCK_SUSPEND, "asus_chg_lock");	
+	wake_lock_init(&asus_charger_lock, WAKE_LOCK_SUSPEND, "asus_charger_soft_start_lock");		
 	wake_lock_init(&asus_water_lock, WAKE_LOCK_SUSPEND, "asus_water_lock");
 	smbchg_dev = chg;			//ASUS BSP add globe device struct +++
 	global_gpio = gpio_ctrl;	//ASUS BSP add gpio control struct +++

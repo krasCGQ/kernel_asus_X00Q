@@ -76,6 +76,8 @@ enum print_reason {
 #define QC_STATE_SOC_THD		70
 #define ASUS_QC_AC_ID			200
 #define ASUS_NORMAL_AC_ID		750
+#define ASUS_10W_ID			1000 // WeiYu:This should be used in charger only
+#define ASUS_ABOVE_13P5W_ID	2000 // WeiYu:This should be used in charger only
 
 #define COUNTRY_BR	1
 #define COUNTRY_IN	1
@@ -315,6 +317,7 @@ struct smb_charger {
 	struct delayed_work	asus_chg_flow_work;
 	struct delayed_work	asus_adapter_adc_work;
 	struct delayed_work	asus_min_monitor_work;
+	struct delayed_work	asus_qc3_soft_start_work;
 	struct delayed_work asus_usb_alert_work;
 	struct delayed_work asus_low_impedance_work;
 	struct delayed_work asus_water_proof_work;

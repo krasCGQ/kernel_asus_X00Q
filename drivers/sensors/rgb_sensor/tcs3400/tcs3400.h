@@ -89,6 +89,7 @@ static bool rgb_debugMode = false;
 #define TCS3400_BLU_CHANHI			0x9B
 
 #define TCS3400_PRX_OFFSET			0x9E
+#define TCS3400_CICLEAR				0xE6
 
 #define ALS_PERSIST(p) (((p) & 0xf) << 3)
 
@@ -111,3 +112,6 @@ enum tcs3400_en_reg {
 };
 
 /* ---BSP Vincent */
+
+#define rearRGB_POLLING_FIRST_RAW	(10)
+#define rearRGB_POLLING_TIME		(40)

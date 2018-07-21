@@ -86,9 +86,29 @@ volatile bool vbus_without_cc_flag = 0;
 extern bool smartchg_stop_flag;
 bool fg_batt_id_ready = 0;
 int g_CDP_WA =0;
+int g_d2d_WA =0; //device to device work around
+int g_PD_chg_icon =0; //for reporting PD chg icon ++
+/*  WeiYu ++
+	g_asus_QC3_WA: QC3 AC to be regonized as QC2 in prior to QC3.
+	This issue occurs at scenario transition (MOS <-> COS)
+		
+	g_non200k_QC3_WA: Same issue, for non 200K AC.
+*/
 int g_asus_QC3_WA =0;
 int g_asus_QC2_WA =0;
+int g_non200k_QC3_WA =0;
 int g_legacy_check_cnt =0;
+#define QC3_200K_ICL	0x3E
+#define QC3_NON200K_ICL	0x38
+#define SOFT_START_ICL  0x14
+#define SOFT_START_END_ICL	0x27
+#define SOFT_START_ICL_DELTA  0x0A // 250ma
+#define SOFT_START_DELAY_MS  10000
+u8 g_SS_begin_icl = SOFT_START_ICL; //ICL_500mA
+u8 g_SS_end_icl = SOFT_START_END_ICL;
+u8 g_SS_icl_step = SOFT_START_ICL_DELTA;
+int g_SS_delay_ms = SOFT_START_DELAY_MS;
+void reset_soft_start_arg(void);
 
 extern int charger_limit_value;
 extern int ftm_mode;
@@ -162,6 +182,7 @@ static void asus_smblib_rerun_aicl(struct smb_charger *chg)
 }
 
 extern struct wake_lock asus_chg_lock;
+extern struct wake_lock asus_charger_lock;
 void asus_smblib_stay_awake(struct smb_charger *chg)
 {
 	CHG_DBG("%s: ASUS set smblib_stay_awake\n", __func__);
@@ -172,6 +193,18 @@ void asus_smblib_relax(struct smb_charger *chg)
 {
 	CHG_DBG("%s: ASUS set smblib_relax\n", __func__);
 	wake_unlock(&asus_chg_lock);
+}
+
+void asus_smblib_SS_stay_awake(struct smb_charger *chg)
+{
+	CHG_DBG_EVT("%s: ASUS set smblib_stay_awake by soft start\n", __func__);
+	wake_lock(&asus_charger_lock);
+}
+
+void asus_smblib_SS_relax(struct smb_charger *chg)
+{
+	CHG_DBG_EVT("%s: ASUS set smblib_relax by soft start\n", __func__);
+	wake_unlock(&asus_charger_lock);
 }
 
 //ASUS_BSP +++
@@ -1896,12 +1929,31 @@ But report QC status in charger mode may be OK.
 */
 bool charger_mode_specified(union power_supply_propval *val){
 
-			if (g_Charger_mode && asus_CHG_TYPE == ASUS_QC_AC_ID){
+			if (g_Charger_mode && (asus_CHG_TYPE == ASUS_QC_AC_ID || 
+				asus_CHG_TYPE == ASUS_ABOVE_13P5W_ID||smbchg_dev->pd_active)){
 				if(asus_get_prop_batt_capacity(smbchg_dev) <= QC_STATE_SOC_THD) {
 					val->intval = POWER_SUPPLY_STATUS_QUICK_CHARGING;
 				} else {
 					val->intval = POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING;
 				}
+				//WeiYu ++ force Quick charging for 13.5W
+				val->intval = POWER_SUPPLY_STATUS_QUICK_CHARGING;
+				return true;
+			}
+			/*	WeiYu ++
+				Report 10W_QUICK_CHARGING will cause PANIC in COS;
+				To work around, we report STATUS_QUICK_CHARGING instead.
+				Then check switch for 10W/13.5W in COS
+			*/
+			else if(g_Charger_mode && (asus_CHG_TYPE == ASUS_NORMAL_AC_ID || 
+				asus_CHG_TYPE == ASUS_10W_ID)){
+				if(asus_get_prop_batt_capacity(smbchg_dev) <= QC_STATE_SOC_THD) {
+					val->intval = POWER_SUPPLY_STATUS_QUICK_CHARGING;
+				} else {
+					val->intval = POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING;
+				}
+				//WeiYu ++ force Not quick charging for 10W
+				val->intval = POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING;	
 				return true;
 			}
 			else return false;
@@ -2006,7 +2058,8 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 	}
 
 	if ((val->intval != POWER_SUPPLY_STATUS_CHARGING) && (val->intval != POWER_SUPPLY_STATUS_QUICK_CHARGING) && 
-			(val->intval != POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING))
+			(val->intval != POWER_SUPPLY_STATUS_NOT_QUICK_CHARGING)&& (val->intval != POWER_SUPPLY_STATUS_10W_NOT_QUICK_CHARGING) && 
+			(val->intval != POWER_SUPPLY_STATUS_10W_QUICK_CHARGING))
 		return 0;
 
 	rc = smblib_read(chg, BATTERY_CHARGER_STATUS_7_REG, &stat);
@@ -2083,6 +2136,7 @@ int smblib_get_prop_batt_health(struct smb_charger *chg,
 	int rc;
 	int effective_fv_uv;
 	u8 stat;
+	u8 chg_stat,vbus_stat;
 
 	rc = smblib_read(chg, BATTERY_CHARGER_STATUS_2_REG, &stat);
 	if (rc < 0) {
@@ -2116,8 +2170,23 @@ int smblib_get_prop_batt_health(struct smb_charger *chg,
 		val->intval = POWER_SUPPLY_HEALTH_OVERHEAT;
 	else if (stat & BAT_TEMP_STATUS_COLD_SOFT_LIMIT_BIT)
 		val->intval = POWER_SUPPLY_HEALTH_COOL;
-	else if (stat & BAT_TEMP_STATUS_HOT_SOFT_LIMIT_BIT)
+	else if (stat & BAT_TEMP_STATUS_HOT_SOFT_LIMIT_BIT){
 		val->intval = POWER_SUPPLY_HEALTH_WARM;
+		
+		//WeiYu ++ modify for jeita icon issue
+		rc = smblib_read(smbchg_dev, USBIN_BASE + INT_RT_STS_OFFSET, &vbus_stat);	
+		rc = smblib_read(smbchg_dev, CHARGING_ENABLE_CMD_REG, &chg_stat);	
+		if((bool)(vbus_stat & USBIN_PLUGIN_RT_STS_BIT)){
+			if((chg_stat&CHARGING_ENABLE_CMD_BIT) == 0){
+				val->intval = POWER_SUPPLY_HEALTH_GOOD;
+				//CHG_DBG_EVT("Warm-temp but reporting health good due to charging is enabled\n");
+			}
+			else{
+				val->intval = POWER_SUPPLY_HEALTH_OVERHEAT;
+			}
+		}
+
+	}
 	else
 		val->intval = POWER_SUPPLY_HEALTH_GOOD;
 
@@ -3693,6 +3762,7 @@ void asus_typec_removal_function(struct smb_charger *chg)
 	cancel_delayed_work(&chg->asus_chg_flow_work);
 	cancel_delayed_work(&chg->asus_adapter_adc_work);
 	cancel_delayed_work(&chg->asus_min_monitor_work);
+	cancel_delayed_work(&chg->asus_qc3_soft_start_work);	
 	cancel_delayed_work(&chg->asus_batt_RTC_work);
 	cancel_delayed_work(&chg->asus_set_flow_flag_work);
 	cancel_delayed_work(&chg->asus_rerun_DRP_work);//WA for 
@@ -3706,8 +3776,14 @@ void asus_typec_removal_function(struct smb_charger *chg)
 	if(g_CDP_WA)
 		--g_CDP_WA;
 	g_asus_QC3_WA = 0;
+	g_asus_QC2_WA =0;
+	g_non200k_QC3_WA =0;
+	reset_soft_start_arg();
 	g_legacy_check_cnt = 0;
+	g_d2d_WA =0;
+	g_PD_chg_icon =0;
 	asus_smblib_relax(smbchg_dev);
+	asus_smblib_SS_relax(smbchg_dev);
 
 	focal_usb_detection(false);		//ASUS BSP Nancy : notify touch cable out +++
 }
@@ -3791,9 +3867,10 @@ static bool ADF_check_status(void)
  ************************/
 
 #define ICL_475mA	0x12
-#define ICL_500mA	0x13
+#define ICL_500mA	0x14
 #define ICL_950mA	0x26
 #define ICL_1000mA	0x28
+#define ICL_1400mA	0x38
 #define ICL_1425mA	0x39
 #define ICL_1500mA	0x3C
 #define ICL_1550mA	0x3E
@@ -4001,6 +4078,36 @@ static bool check_ultrabatterylife_enable(void)
 }
 //ASUS_BSP ---
 
+bool high_power_pd(void){
+
+	u8 ICL_reg = 0x14; 
+	static int cnt=0;
+	smblib_read(smbchg_dev, USBIN_CURRENT_LIMIT_CFG_REG, &ICL_reg);
+
+
+	if(g_PD_chg_icon && smbchg_dev->pd_active){
+		if(g_d2d_WA){
+			++cnt;
+			if(cnt==1){
+			CHG_DBG_EVT("PD active but not high power, icl 0x%x, usb type %d, cnt %d\n",
+				ICL_reg,smbchg_dev->real_charger_type,g_PD_chg_icon);  // check status only
+			}
+			else if(cnt > 10){
+			CHG_DBG_EVT("PD active but not high power, icl 0x%x, usb type %d, cnt %d\n",
+				ICL_reg,smbchg_dev->real_charger_type,g_PD_chg_icon);  // check status only
+				cnt =0;
+			}
+			return false;
+		}
+		else
+			return true;
+
+	}
+	else 
+		return false;
+
+}
+
 void update_ubatterylife_info(bool* dismiss){
 
 	bool prev_ubat_flag = g_ubatterylife_enable_flag;
@@ -4143,12 +4250,25 @@ void jeita_rule(void)
 	}
 	
 	if(g_asus_QC3_WA){
-		if(ICL_reg != ICL_1900mA){
+		
+		// WeiYu ++
+		//For COS, due to MOS is replaced by soft start;
+		if(g_Charger_mode && ICL_reg != QC3_200K_ICL){
 			rc = smblib_masked_write(smbchg_dev, USBIN_CURRENT_LIMIT_CFG_REG,
-				USBIN_CURRENT_LIMIT_MASK, ICL_1900mA);
-			CHG_DBG_WA("fix asus QC3 ICL: 0x%x to 0x%x\n", ICL_reg, ICL_1900mA);
+				USBIN_CURRENT_LIMIT_MASK, QC3_200K_ICL);
+			CHG_DBG_WA("fix asus QC3 ICL: 0x%x to 0x%x\n", ICL_reg, QC3_200K_ICL);
 		}
+		
 		g_asus_QC3_WA=0;
+	}
+
+	if(g_non200k_QC3_WA){
+		if(g_Charger_mode && ICL_reg != ICL_1400mA){
+			rc = smblib_masked_write(smbchg_dev, USBIN_CURRENT_LIMIT_CFG_REG,
+				USBIN_CURRENT_LIMIT_MASK, ICL_1400mA);
+			CHG_DBG_WA("fix asus QC2 ICL: 0x%x to 0x%x\n", ICL_reg, ICL_1400mA);
+		}
+		g_non200k_QC3_WA=2;
 	}
 	
 	if (demo_app_property_flag) {
@@ -4327,7 +4447,9 @@ void reset_icl_for_nonstandard_ac(void){
 			}
 			break;
 		case OTHERS:
-			if (HVDCP_FLAG == 0 && UFP_FLAG == 3 && !LEGACY_CABLE_FLAG)
+			if(HVDCP_FLAG == 3)
+				set_icl = ICL_1500mA;
+			else if (HVDCP_FLAG == 0 && UFP_FLAG == 3 && !LEGACY_CABLE_FLAG)
 				set_icl = ICL_3000mA;
 			else if (HVDCP_FLAG == 0 && UFP_FLAG == 2 && !LEGACY_CABLE_FLAG)
 
@@ -4414,6 +4536,61 @@ void check_legacy_for_nonstandard_ac(void){
 	
 }
 
+
+
+
+void asus_qc3_soft_start_work(struct work_struct *work){
+
+	int rc; 
+	int done = false;
+	g_SS_begin_icl += g_SS_icl_step;
+	if(g_SS_begin_icl >= g_SS_end_icl){
+		g_SS_begin_icl = g_SS_end_icl;
+		done = true;
+	}
+	else if(g_SS_begin_icl < SOFT_START_ICL){
+		done = true;
+		CHG_DBG_EVT("bad start icl, terminate soft start\n");
+	}else;
+
+	// if(): for safty, it is dummy
+	if(g_SS_begin_icl <= g_SS_end_icl && g_SS_begin_icl >= SOFT_START_ICL){
+		rc = smblib_masked_write(smbchg_dev, USBIN_CURRENT_LIMIT_CFG_REG,
+			USBIN_CURRENT_LIMIT_MASK, g_SS_begin_icl);
+		CHG_DBG_EVT("soft start set icl 0x%x, target icl:0x%x\n",g_SS_begin_icl,g_SS_end_icl);
+	}
+	
+	if(!done)
+		schedule_delayed_work(&smbchg_dev->asus_qc3_soft_start_work, msecs_to_jiffies(g_SS_delay_ms));
+	else{
+		g_SS_begin_icl = SOFT_START_ICL; //reset
+		CHG_DBG_EVT("soft start is done\n");	
+		asus_smblib_SS_relax(smbchg_dev);
+	}
+		
+
+}
+
+void asus_trigger_soft_start(u8 begin, u8 end, u8 step, int delay_ms){
+
+	g_SS_begin_icl = begin;
+	g_SS_end_icl = end;
+	g_SS_icl_step = step;
+	g_SS_delay_ms = delay_ms;
+	CHG_DBG_EVT("begin:0x%x, end:0x%x, step:0x%x, delay_ms:0x%x\n",
+		g_SS_begin_icl,g_SS_end_icl,g_SS_icl_step,g_SS_delay_ms);
+
+	asus_smblib_SS_stay_awake(smbchg_dev);
+	schedule_delayed_work(&smbchg_dev->asus_qc3_soft_start_work, msecs_to_jiffies(g_SS_delay_ms));
+
+}
+
+void reset_soft_start_arg(void){
+	g_SS_begin_icl = SOFT_START_ICL;
+	g_SS_end_icl = SOFT_START_END_ICL;
+	g_SS_icl_step = SOFT_START_ICL_DELTA;
+	g_SS_delay_ms = SOFT_START_DELAY_MS;
+}
 void asus_min_monitor_work(struct work_struct *work)
 {
 	int rc;
@@ -4483,8 +4660,15 @@ void asus_chg_flow_work(struct work_struct *work)
 	apsd_result = smblib_update_usb_type(smbchg_dev);
 
 	if(apsd_result->pst == POWER_SUPPLY_TYPE_USB){
-		//smbchg_dev->real_charger_type = POWER_SUPPLY_TYPE_USB;
-		//CHG_DBG("set real_charger_type as %d\n",POWER_SUPPLY_TYPE_USB);
+		/*	WeiYu++
+			g_d2d_WA: device to device(d2d) will be pd_active and USB type;
+			However, it is not high power so shouldn't be "++"
+			Let g_d2d_WA=1 to report d2d as normal icon.
+		*/
+		g_d2d_WA =1;
+
+		//Not sure whether this supply change is necessary, keep it.
+		//Maybe for "adb" related issue.
 		power_supply_changed(smbchg_dev->usb_psy);
 	}
 
@@ -4523,6 +4707,11 @@ void asus_chg_flow_work(struct work_struct *work)
 	if (smbchg_dev->pd_active) {
 		CHG_DBG_EVT("%s: PD_active\n", __func__);
 		//asus_smblib_rerun_aicl(smbchg_dev);
+		/*	WeiYu ++ 
+			g_PD_chg_icon:make sure charger-side ready then comes to reporting PD chg-icon;
+			Otherwise, PD regardless high/low power will becomes icon "++"
+		*/
+		g_PD_chg_icon =1;
 		asus_adapter_detecting_flag = 0;
 		smblib_asus_monitor_start(smbchg_dev, DELAY_MONITOR_WORK_MS);		//ASUS BSP Austin_T: Jeita start
 		return;
@@ -4532,8 +4721,10 @@ void asus_chg_flow_work(struct work_struct *work)
 
 	case SDP_CHARGER_BIT:
 	case FLOAT_CHARGER_BIT:
-		if (UFP_FLAG == 3 && !LEGACY_CABLE_FLAG)
+		if (UFP_FLAG == 3 && !LEGACY_CABLE_FLAG){
 			set_icl = ICL_3000mA;
+			asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;
+		}
 		else if (UFP_FLAG == 2 && !LEGACY_CABLE_FLAG)
 			set_icl = ICL_1500mA;
 		else
@@ -4558,8 +4749,10 @@ void asus_chg_flow_work(struct work_struct *work)
 		smblib_asus_monitor_start(smbchg_dev, DELAY_MONITOR_WORK_MS);		//ASUS BSP Austin_T: Jeita start
 		break;
 	case CDP_CHARGER_BIT:
-		if (UFP_FLAG == 3 && !LEGACY_CABLE_FLAG)
+		if (UFP_FLAG == 3 && !LEGACY_CABLE_FLAG){
 			set_icl = ICL_3000mA;
+			asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;
+		}
 		else
 			set_icl = ICL_1500mA;
 
@@ -4575,8 +4768,10 @@ void asus_chg_flow_work(struct work_struct *work)
 		smblib_asus_monitor_start(smbchg_dev, DELAY_MONITOR_WORK_MS);		//ASUS BSP Austin_T: Jeita start
 		break;
 	case OCP_CHARGER_BIT:
-		if (UFP_FLAG == 3 && !LEGACY_CABLE_FLAG)
+		if (UFP_FLAG == 3 && !LEGACY_CABLE_FLAG){
 			set_icl = ICL_3000mA;
+			asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;
+		}
 		else if (UFP_FLAG == 2 && !LEGACY_CABLE_FLAG)
 			set_icl = ICL_1500mA;
 		else
@@ -4765,48 +4960,148 @@ void asus_adapter_adc_work(struct work_struct *work)
 	
 	switch (ASUS_ADAPTER_ID) {
 	case ASUS_750K:
-		if (HVDCP_FLAG == 0) {
-			asus_CHG_TYPE = ASUS_NORMAL_AC_ID;
-			if (UFP_FLAG ==3 && !LEGACY_CABLE_FLAG)
-				usb_max_current = ICL_3000mA;
-			else
-				usb_max_current = ICL_2000mA;
-		} else {
+
+		if(HVDCP_FLAG == 3){
+
+			g_non200k_QC3_WA = 2; // make no WA in auth_done func and jeita
+			asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;			
+			usb_max_current = QC3_NON200K_ICL;	
+			/*	WeiYu ++
+				above is original flow, and we handle QC3 soft start here
+				Soft Start works on MOS only, COS need not S.S.
+			*/
+			if(!g_Charger_mode){
+			usb_max_current = ICL_500mA;			
+			asus_trigger_soft_start(SOFT_START_ICL,QC3_NON200K_ICL,
+				SOFT_START_ICL_DELTA,SOFT_START_DELAY_MS);	
+			}
+		}
+		else if(HVDCP_FLAG == 2){
 			usb_max_current = ICL_1000mA;
+		}
+		else if(HVDCP_FLAG == 0 && LEGACY_CABLE_FLAG){
+				asus_CHG_TYPE = ASUS_NORMAL_AC_ID;				
+				usb_max_current = ICL_2000mA;
+		}
+		else if(HVDCP_FLAG == 0 && !LEGACY_CABLE_FLAG && UFP_FLAG == 1){
+				asus_CHG_TYPE = ASUS_NORMAL_AC_ID;				
+				usb_max_current = ICL_2000mA;
+		}
+		else{
+			usb_max_current = ICL_1000mA;
+			CHG_DBG_E("No matching condition, set defualt icl: 0x%x\n",usb_max_current);
+
 		}
 		break;
 	case ASUS_200K:
+
 		if (HVDCP_FLAG == 3) {
+			/*WeiYu ++ 
+				Make sure asus_CHG_TYPE == ASUS_QC_AC_ID
+				SO DOES QC3_200K_ICL INITIAL VALUE
+			*/
 			asus_CHG_TYPE = ASUS_QC_AC_ID;
-			usb_max_current = ICL_1900mA;
-		} else if (HVDCP_FLAG == 0 && UFP_FLAG == 3 && !LEGACY_CABLE_FLAG) {
-			usb_max_current = ICL_3000mA;
-		} else if (HVDCP_FLAG == 0 && UFP_FLAG == 2 && !LEGACY_CABLE_FLAG) {
-			usb_max_current = ICL_1500mA;
-		} else {
+			usb_max_current = QC3_200K_ICL;
+			
+			/*	WeiYu ++
+				above is original flow, and we handle soft start here
+			*/
+			if(!g_Charger_mode){	
+				usb_max_current = ICL_500mA;
+				asus_trigger_soft_start(SOFT_START_ICL,QC3_200K_ICL,
+					SOFT_START_ICL_DELTA,SOFT_START_DELAY_MS);
+			}
+		}
+		/*
+			WeiYu: While the following are same icl setting, we list the conditions
+		*/
+		else if (HVDCP_FLAG == 2){
 			usb_max_current = ICL_1000mA;
+		}
+		else if(HVDCP_FLAG == 0 && LEGACY_CABLE_FLAG){
+			usb_max_current = ICL_1000mA;
+		}
+		else if(HVDCP_FLAG == 0 && !LEGACY_CABLE_FLAG && UFP_FLAG == 1){
+			usb_max_current = ICL_1000mA;
+		}
+		else{
+			usb_max_current = ICL_1000mA;
+			CHG_DBG_E("No matching condition, set defualt icl: 0x%x\n",usb_max_current);
+
 		}
 		break;
 	case PB:
-		if (HVDCP_FLAG == 0) {
-			if (UFP_FLAG == 3 && !LEGACY_CABLE_FLAG)
-				usb_max_current = ICL_3000mA;
-			else
-				usb_max_current = ICL_2000mA;
-		} else {
+
+		if(HVDCP_FLAG == 3){
+
+
+			g_non200k_QC3_WA = 2; // make no WA in auth_done func
+			asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;			
+			usb_max_current = QC3_NON200K_ICL;		
+			/*	WeiYu ++
+				above is original flow, and we handle QC3 soft start here
+			*/
+			if(!g_Charger_mode){	
+				usb_max_current = ICL_500mA;			
+				asus_trigger_soft_start(SOFT_START_ICL,QC3_NON200K_ICL,
+					SOFT_START_ICL_DELTA,SOFT_START_DELAY_MS);	
+			}
+		}
+		else if(HVDCP_FLAG == 2){
 			usb_max_current = ICL_1000mA;
+		}
+		else if(HVDCP_FLAG == 0 && LEGACY_CABLE_FLAG){
+				asus_CHG_TYPE = ASUS_NORMAL_AC_ID;				
+				usb_max_current = ICL_2000mA;
+		}
+		else if(HVDCP_FLAG == 0 && !LEGACY_CABLE_FLAG && UFP_FLAG == 1){
+				asus_CHG_TYPE = ASUS_NORMAL_AC_ID;				
+				usb_max_current = ICL_2000mA;
+		}
+		else{
+			usb_max_current = ICL_1000mA;
+			CHG_DBG_E("No matching condition, set defualt icl: 0x%x\n",usb_max_current);
+
 		}
 		break;
 	case OTHERS:
-		if (HVDCP_FLAG == 0 && UFP_FLAG == 3 && !LEGACY_CABLE_FLAG)
-			usb_max_current = ICL_3000mA;
-		else if (HVDCP_FLAG == 0 && UFP_FLAG == 2 && !LEGACY_CABLE_FLAG)
 
+		if(HVDCP_FLAG == 3){
+
+			g_non200k_QC3_WA = 2; // make no WA in auth_done func
+			asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;			
+			usb_max_current = QC3_NON200K_ICL;
+			/*	WeiYu ++
+				above is original flow, and we handle QC3 soft start here
+			*/
+			if(!g_Charger_mode){	
+			usb_max_current = ICL_500mA;			
+			asus_trigger_soft_start(SOFT_START_ICL,QC3_NON200K_ICL,
+				SOFT_START_ICL_DELTA,SOFT_START_DELAY_MS);			
+			}
+		}
+		else if(HVDCP_FLAG == 2){
+			usb_max_current = ICL_1000mA;
+		}
+		else if (HVDCP_FLAG == 0 && UFP_FLAG == 3 && !LEGACY_CABLE_FLAG){
+			asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;						
+			usb_max_current = ICL_3000mA;
+			/*	WeiYu ++
+				above is original flow, and we handle soft start here
+			*/
+			if(!g_Charger_mode){	
+				usb_max_current = ICL_500mA;			
+				asus_trigger_soft_start(SOFT_START_ICL,ICL_3000mA,
+					(SOFT_START_ICL_DELTA),SOFT_START_DELAY_MS);	
+			}
+		}
+		else if (HVDCP_FLAG == 0 && UFP_FLAG == 2 && !LEGACY_CABLE_FLAG){
 			usb_max_current = ICL_1500mA;
+		}
 		else if((BR_countrycode == COUNTRY_BR || BR_countrycode == COUNTRY_IN)
-			&& HVDCP_FLAG == 0 && UFP_FLAG == 1)
+			&& HVDCP_FLAG == 0)
 			usb_max_current = ICL_2000mA;
-		else
+		else 
 			usb_max_current = ICL_1000mA;
 		break;
 	case ADC_NOT_READY:
@@ -4833,10 +5128,10 @@ void asus_adapter_adc_work(struct work_struct *work)
 		CHG_DBG("%s: Pull low USBSW_S\n", __func__);
 	//Ara  close gpio in order ---
 
-
+	//WeiYu ++ 18W modify from 0x4C to 0x54 for gps issue
 	if (asus_CHG_TYPE == ASUS_QC_AC_ID) {
-		CHG_DBG("%s: Write HVDCP_PULSE_COUNT_MAX = 4C\n", __func__);
-		rc = smblib_write(smbchg_dev, HVDCP_PULSE_COUNT_MAX, 0x4C);
+		CHG_DBG("%s: Write HVDCP_PULSE_COUNT_MAX = 54\n", __func__);
+		rc = smblib_write(smbchg_dev, HVDCP_PULSE_COUNT_MAX, 0x54);
 	} else {	
 		CHG_DBG("%s: Write HVDCP_PULSE_COUNT_MAX = 54\n", __func__);
 		rc = smblib_write(smbchg_dev, HVDCP_PULSE_COUNT_MAX, 0x54);
@@ -4873,6 +5168,10 @@ void asus_adapter_adc_work(struct work_struct *work)
 
 	asus_adapter_detecting_flag = 0;
 	smblib_asus_monitor_start(smbchg_dev, DELAY_MONITOR_WORK_MS);		//ASUS BSP Austin_T: Jeita start
+
+	// WeiYu: charger icon timing issue, intend to send switch uevent
+	power_supply_changed(smbchg_dev->batt_psy);
+
 }
 //ASUS BSP : Add ASUS Adapter Detecting ---
 
@@ -5505,21 +5804,54 @@ static void smblib_handle_hvdcp_3p0_auth_done(struct smb_charger *chg,
 		CHG_DBG_WA("prev and now HCDCP detection not align\n");
 	}
 
+	if((ASUS_ADAPTER_ID == ASUS_750K||ASUS_ADAPTER_ID == OTHERS ||
+		ASUS_ADAPTER_ID == PB) && 
+		apsd_result->pst ==POWER_SUPPLY_TYPE_USB_HVDCP_3){
+		/*
+			We set g_non200k_QC3_WA=2 if it has been QC3 instead of QC2
+		*/
+		if(g_non200k_QC3_WA ==0){
+			asus_CHG_TYPE = ASUS_ABOVE_13P5W_ID;	
+			g_non200k_QC3_WA =1;
+			CHG_DBG_WA("WA for non200K QC3 ICL error\n");	
+			rc = smblib_masked_write(smbchg_dev, USBIN_CURRENT_LIMIT_CFG_REG,
+				USBIN_CURRENT_LIMIT_MASK, ICL_500mA);
+			if (rc < 0)
+				CHG_DBG_E("%s: Failed to set USBIN_CURRENT_LIMIT\n", __func__);			
+			if(!g_Charger_mode){
+			asus_trigger_soft_start(SOFT_START_ICL,ICL_1400mA,
+				SOFT_START_ICL_DELTA,SOFT_START_DELAY_MS);	
+			}
+			
+		}
+	}
+	else if(g_non200k_QC3_WA == 1){
+		g_non200k_QC3_WA =0;
+		CHG_DBG_WA("prev and now HCDCP detection not align for non200K QC3 WA\n");
+	}
+	
 	if (ASUS_ADAPTER_ID == ASUS_200K && asus_CHG_TYPE != ASUS_QC_AC_ID
 		&& apsd_result->pst ==POWER_SUPPLY_TYPE_USB_HVDCP_3 ) {
 
 		CHG_DBG_EVT("%s: Fix HVDCP3 sign from ASUS_200K\n", __func__);
-		asus_CHG_TYPE = ASUS_QC_AC_ID;
+		asus_CHG_TYPE = ASUS_QC_AC_ID; //make thks if to be run once only;
 		g_asus_QC3_WA = 1;
-		CHG_DBG_EVT("%s: Write HVDCP_PULSE_COUNT_MAX = 4C\n", __func__);
-		rc = smblib_write(smbchg_dev, HVDCP_PULSE_COUNT_MAX, 0x4C);		
+		CHG_DBG_EVT("%s: Write HVDCP_PULSE_COUNT_MAX = 54\n", __func__);
+		rc = smblib_write(smbchg_dev, HVDCP_PULSE_COUNT_MAX, 0x54);		
 		rc = smblib_masked_write(smbchg_dev, USBIN_CURRENT_LIMIT_CFG_REG,
-			USBIN_CURRENT_LIMIT_MASK, ICL_1900mA);
+			USBIN_CURRENT_LIMIT_MASK, ICL_500mA);
 		if (rc < 0)
 			CHG_DBG_E("%s: Failed to set USBIN_CURRENT_LIMIT\n", __func__);
+		
+		if(!g_Charger_mode){	
+		asus_trigger_soft_start(SOFT_START_ICL,QC3_200K_ICL,
+			SOFT_START_ICL_DELTA,SOFT_START_DELAY_MS);
+		}
+		//schedule_delayed_work(&smbchg_dev->asus_qc3_soft_start_work, msecs_to_jiffies(SOFT_START_DELAY_MS));		
 		asus_smblib_rerun_aicl(smbchg_dev);
 		power_supply_changed(chg->batt_psy);
 	}
+	
 	smblib_dbg(chg, PR_INTERRUPT, "IRQ: hvdcp-3p0-auth-done rising; %s detected\n",
 		   apsd_result->name);
 	CHG_DBG("%s: start, IRQ: hvdcp-3p0-auth-done rising; %s detected\n", __func__, apsd_result->name);
@@ -6784,6 +7116,7 @@ int smblib_init(struct smb_charger *chg)
 	INIT_DELAYED_WORK(&chg->asus_chg_flow_work, asus_chg_flow_work);
 	INIT_DELAYED_WORK(&chg->asus_adapter_adc_work, asus_adapter_adc_work);
 	INIT_DELAYED_WORK(&chg->asus_min_monitor_work, asus_min_monitor_work);
+	INIT_DELAYED_WORK(&chg->asus_qc3_soft_start_work, asus_qc3_soft_start_work);	
 	INIT_DELAYED_WORK(&chg->asus_batt_RTC_work, asus_batt_RTC_work);
 	INIT_DELAYED_WORK(&chg->asus_set_flow_flag_work, asus_set_flow_flag_work);
 	INIT_DELAYED_WORK(&chg->asus_rerun_DRP_work, asus_rerun_DRP_work);//WA for Type-C detection

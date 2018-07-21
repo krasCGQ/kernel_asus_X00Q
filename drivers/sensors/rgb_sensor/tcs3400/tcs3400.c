@@ -99,8 +99,16 @@ EXPORT_SYMBOL(unlock_i2c_bus7);
 #endif
 //---Vincent
 
+static struct mutex	rgbThread_lock;
+static struct  mutex rgb_asynch_mutex;
 
 static struct mutex als_enable_mutex;
+
+static bool g_rearRgb_enabled = false;
+static struct workqueue_struct 		*Rear_RGB_delay_workqueue;
+static void rearRGB_polling_raw(struct work_struct *work);
+static 		DECLARE_DELAYED_WORK(rearRGB_polling_raw_work, rearRGB_polling_raw);
+
 struct msm_rgb_sensor_vreg {
 	struct camera_vreg_t *cam_vreg;
 	void *data[CAM_VREG_MAX];
@@ -123,10 +131,10 @@ struct tcs3400_info {
 	u8 it_time;
 	u8 gain;
 	bool using_calib;
-	uint16_t dataR;
-	uint16_t dataG;
-	uint16_t dataB;
-	uint16_t dataW;
+	int16_t dataR;
+	int16_t dataG;
+	int16_t dataB;
+	int16_t dataW;
 };
 struct tcs3400_status {
 	bool need_wait;
@@ -515,13 +523,19 @@ static int rgbSensor_setEnable(bool enabled)
 	if ((enabled && l_count == 0) || (!enabled && l_count == 1)) {
 		ret = rgbSensor_doEnable(enabled);
 		do_enabled = enabled;
+		g_rearRgb_enabled  = enabled;
+
+		if( true == g_rearRgb_enabled){
+				queue_delayed_work(Rear_RGB_delay_workqueue, &rearRGB_polling_raw_work, msecs_to_jiffies(rearRGB_POLLING_FIRST_RAW));
+		}
 	}
 	if (enabled) {
 		l_count++;
 	} else{
 		l_count--;
 	}
-	mutex_unlock(&als_enable_mutex);
+	mutex_unlock(&als_enable_mutex);	
+
 
 	return ret;
 }
@@ -623,9 +637,13 @@ static int get_rgb_data(int rgb_data, u16 *pdata, bool l_needDelay)
 		rgbSensor_checkStatus();
 	}
 
+	mutex_lock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time  	
+
+       
 	ret = tcs3400_i2c_read(cmd1, &raw_data[0]);
 	if (ret < 0) {
 		RGB_DBG_E("%s: tcs3400_i2c_read at %x fail\n", __func__, cmd1);
+		mutex_unlock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time      
 		goto end;
 	}
 
@@ -634,6 +652,7 @@ static int get_rgb_data(int rgb_data, u16 *pdata, bool l_needDelay)
 	ret = tcs3400_i2c_read(cmd2, &raw_data[1]);	
 	if (ret < 0) {
 		RGB_DBG_E("%s: tcs3400_i2c_read at %x fail\n", __func__, cmd2);
+		mutex_unlock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time   
 		goto end;
 	}
 	RGB_DBG_D("High byte: 0x%x\n", raw_data[1]);
@@ -641,6 +660,8 @@ static int get_rgb_data(int rgb_data, u16 *pdata, bool l_needDelay)
 	*pdata = le16_to_cpup((const __le16 *)&raw_data[0]);
 
 	RGB_DBG_D("raw_data: 0x%x, %d\n", *pdata, *pdata);
+    
+	mutex_unlock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time
 	
 end:
 	return ret;
@@ -650,8 +671,12 @@ static int rgbSensor_setup(struct tcs3400_info *lpi)
 	int ret = 0;
  	uint16_t adc_data;
 
-	lpi->it_time = 0x6B;
-	lpi->gain = AGAIN_16;
+	lpi->it_time = 0xF2;		//40ms,  cycle=14,  value=0xF2
+	lpi->gain = AGAIN_4;
+	lpi->dataR = -1;
+	lpi->dataG = -1;
+	lpi->dataB = -1;
+	lpi->dataW = -1;  
 
 	// Enable tcs3400
 	ret = rgbSensor_setEnable(true);
@@ -759,7 +784,9 @@ static int rgbSensor_itSet_ms(int input_ms)
 	if (cm_lp_info->als_enable == 1) {
 		do_gettimeofday(&it_set_begin);
 		g_rgb_status.wait_after_setit = true;
+
 		ret = tcs3400_i2c_write(TCS3400_ALS_TIME, it_time);
+     
 	} else{
 		ret = -1;
 		RGB_DBG("%s: write config - it time = %d, it set = %d\n", __func__, input_ms, it_time);
@@ -775,6 +802,15 @@ bool checkRgbcCycleCompleted(int Total_Test_Number)
 
 	for(t_count=0; t_count< Total_Test_Number; t_count++)
 	{
+	        /* Eason: After 0x93 bit7  ASAT flag asserted, 
+	        *            need sending a clear channel interrupt command to de-asserted.
+	        */
+	        ret = tcs3400_i2c_write(TCS3400_CICLEAR, 0);
+	        if (ret < 0) {
+		        RGB_DBG("%s,TCS3400_CICLEAR  I2C error", __func__ );
+		        return -EIO;
+	        }
+            
 	        ret = tcs3400_i2c_read(TCS3400_STATUS, &adc_status);
 	        RGB_DBG_D("%s,TCS3400_STATUS 0x%x", __func__ ,adc_status);
 	        if (ret < 0) {
@@ -785,9 +821,16 @@ bool checkRgbcCycleCompleted(int Total_Test_Number)
 	        /*Eason: check Status Register 0x93 bit0 "RGBC Valid",
 	        *                  indicates that the RGBC cycle has completed since AEN was asserted.
 	        */
-	        if( (adc_status & 0x01) ==  0x01  ){
-		        RGB_DBG_D("%s,TCS3400_STATUS RGBC Valid", __func__);
-		        return true;
+	        if((adc_status & 0x01) == 0x01){
+	            //skip check ASAT flag
+	            /*if((adc_status & 0x80) == 0x80){
+	                RGB_DBG_D("%s,TCS3400_STATUS RGBC Invalid", __func__);
+	                return false;
+	            } else {
+	                RGB_DBG_D("%s,TCS3400_STATUS RGBC Valid", __func__);
+	                return true;
+	            }*/    
+	           return true;  
 	        }                
 
 	        msleep(2);
@@ -837,7 +880,12 @@ static int rgbSensor_gainSet(int val)
 
 	cm_lp_info->gain = gain_value;
 
+	RGB_DBG("%s: %d\n", __func__, gain_value);    
+
+
 	ret = tcs3400_i2c_write(TCS3400_GAIN, cm_lp_info->gain);
+
+	
 	return ret;
 }
 
@@ -1762,6 +1810,106 @@ static void create_rgbSensor_w_proc_file(void)
 /*---BSP David proc rgbSensor_w Interface---*/
 #endif
 /*---BSP David ASUS Interface---*/
+static void polling_Rear_RGBvalue(void)
+{
+    	uint16_t adc_data;
+	u8 adc_status;
+	int dataI[ASUS_RGB_SENSOR_DATA_SIZE];
+	bool rgbc_valid = false;
+	int ret = 0;    
+        
+	/* +++Vincent- workaround for reading wrong value */
+	mutex_lock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time              
+	ret = tcs3400_i2c_read(TCS3400_STATUS, &adc_status);
+	if (ret < 0) {
+		RGB_DBG_E("%s: IOCTL_DATA_READ status error\n", __func__);
+		mutex_unlock(&rgbThread_lock);//Eason add mutex prevent two thread access chip at same time                
+		rgbc_valid = false;
+	}
+	mutex_unlock(&rgbThread_lock);//Eason add mutex prevent two thread access chip at same time             
+
+      
+	mutex_lock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time  			
+	rgbc_valid =   checkRgbcCycleCompleted(1);    
+	mutex_unlock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time
+			
+	ret = get_rgb_data(RGB_DATA_R, &adc_data, true);
+	if (ret < 0) {
+		adc_data = -1;
+	}
+	dataI[0] = adc_data;
+	ret = get_rgb_data(RGB_DATA_G, &adc_data, true);
+	if (ret < 0) {
+		adc_data = -1;
+	}
+	dataI[1] = adc_data;
+	ret = get_rgb_data(RGB_DATA_B, &adc_data, true);
+	if (ret < 0) {
+		adc_data = -1;
+	}
+	dataI[2] = adc_data;
+	ret = get_rgb_data(RGB_DATA_W, &adc_data, true);
+	if (ret < 0) {
+		adc_data = -1;
+	}
+	dataI[3] = adc_data;
+	dataI[4] = 1;
+
+	if(false == rgbc_valid){                    
+		RGB_DBG("%s: tcs3400 status RGBC Invalid, get old RGBW data, after_setit:%d\n", __func__, g_rgb_status.wait_after_setit);
+		//dataI[0] = cm_lp_info->dataR;
+		//dataI[1] = cm_lp_info->dataG;
+		//dataI[2] = cm_lp_info->dataB;
+		//dataI[3] = cm_lp_info->dataW;       	
+	}else if(g_rgb_status.wait_after_setit) {    //Eason: check after setting integration time
+		do_gettimeofday(&it_set_now);
+
+		if(!is_it_time_passed(it_set_begin, it_set_now)) {
+			RGB_DBG("%s: Integration time is not ready yet, get old RGBW data\n", __func__);
+			//dataI[0] = cm_lp_info->dataR;
+			//dataI[1] = cm_lp_info->dataG;
+			//dataI[2] = cm_lp_info->dataB;
+			//dataI[3] = cm_lp_info->dataW;             
+		} else {
+		
+			mutex_lock(&rgb_asynch_mutex);
+			if( true == g_rearRgb_enabled){
+				RGB_DBG("%s: tcs3400 status RGBC Valid, get new RGBW data\n", __func__);
+				cm_lp_info->dataR = dataI[0];
+				cm_lp_info->dataG = dataI[1];
+				cm_lp_info->dataB = dataI[2];
+				cm_lp_info->dataW = dataI[3];
+				g_rgb_status.wait_after_setit = false;
+			}
+			mutex_unlock(&rgb_asynch_mutex);
+		}            
+	} else {
+	
+			mutex_lock(&rgb_asynch_mutex);
+			if( true == g_rearRgb_enabled){	
+				RGB_DBG_D("%s: tcs3400 don't need to wait_after_setit , get new RGBW data\n", __func__);	
+				cm_lp_info->dataR = dataI[0];
+				cm_lp_info->dataG = dataI[1];
+				cm_lp_info->dataB = dataI[2];
+				cm_lp_info->dataW = dataI[3];
+			}
+			mutex_unlock(&rgb_asynch_mutex);                
+	}	
+
+	RGB_DBG_D("%s: cmd = DATA_READ_RGBW, dataR = %d, dataG = %d, dataB = %d, dataW = %d\n"
+		, __func__, cm_lp_info->dataR,cm_lp_info->dataG, cm_lp_info->dataB, cm_lp_info->dataW);
+
+}
+
+
+static void rearRGB_polling_raw(struct work_struct *work)
+{
+       if( true == g_rearRgb_enabled)
+       {
+              polling_Rear_RGBvalue();
+              queue_delayed_work(Rear_RGB_delay_workqueue, &rearRGB_polling_raw_work, msecs_to_jiffies(rearRGB_POLLING_TIME));    
+       }     
+}
 
 
 static int rgbSensor_miscOpen(struct inode *inode, struct file *file)
@@ -1778,7 +1926,17 @@ static int rgbSensor_miscOpen(struct inode *inode, struct file *file)
 static int rgbSensor_miscRelease(struct inode *inode, struct file *file)
 {
 	int ret = 0;
+	
+	mutex_lock(&rgb_asynch_mutex);
+	cm_lp_info->it_time = 0xF2;           //40ms,  cycle=14,  value=0xF2
+	cm_lp_info->gain = AGAIN_4;
+	cm_lp_info->dataR = -1;
+	cm_lp_info->dataG = -1;
+	cm_lp_info->dataB = -1;
+	cm_lp_info->dataW = -1;  	
 	ret = rgbSensor_setEnable(false);
+	mutex_unlock(&rgb_asynch_mutex);    
+	
 	RGB_DBG("%s: %d\n", __func__, ret);
 	return ret;
 }
@@ -1789,11 +1947,9 @@ static long rgbSensor_miscIoctl(struct file *file, unsigned int cmd, unsigned lo
 	int ret = 0;
 	int dataI[ASUS_RGB_SENSOR_DATA_SIZE];
 	char dataS[ASUS_RGB_SENSOR_NAME_SIZE];
- 	uint16_t adc_data;
-	u8 adc_status;
 	int l_debug_mode = 0;
 	static int log_filter = 0;
-	bool rgbc_valid = false;
+
 	
 	switch (cmd) {
 		case ASUS_RGB_SENSOR_IOCTL_IT_SET:
@@ -1807,74 +1963,20 @@ static long rgbSensor_miscIoctl(struct file *file, unsigned int cmd, unsigned lo
 				RGB_DBG_E("%s: cmd = IT_SET, copy_from_user error(%d)\n", __func__, it_time);
 				goto end;
 			}
+			mutex_lock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time
+			ret = tcs3400_i2c_write(TCS3400_CONTROL, 0);			
 			ret = rgbSensor_itSet_ms(it_time);
+			ret = tcs3400_i2c_write(TCS3400_CONTROL, TCS3400_EN_PWR_ON | TCS3400_EN_ALS | TCS3400_EN_ALS_IRQ);            
+			mutex_unlock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time               
 			RGB_DBG_API("%s: cmd = IT_SET, time = %dms, reg = %d\n", __func__,it_time, cm_lp_info->it_time);
 			break;
 		case ASUS_RGB_SENSOR_IOCTL_DATA_READ:
-			/* +++Vincent- workaround for reading wrong value */
-			ret = tcs3400_i2c_read(TCS3400_STATUS, &adc_status);
-			if (ret < 0) {
-				RGB_DBG_E("%s: IOCTL_DATA_READ status error\n", __func__);
-				goto end;
-			}
-
-			rgbc_valid =   checkRgbcCycleCompleted(1);         
-			
-			ret = get_rgb_data(RGB_DATA_R, &adc_data, true);
-			if (ret < 0) {
-				goto end;
-			}
-			dataI[0] = adc_data;
-			ret = get_rgb_data(RGB_DATA_G, &adc_data, true);
-			if (ret < 0) {
-				goto end;
-			}
-			dataI[1] = adc_data;
-			ret = get_rgb_data(RGB_DATA_B, &adc_data, true);
-			if (ret < 0) {
-				goto end;
-			}
-			dataI[2] = adc_data;
-			ret = get_rgb_data(RGB_DATA_W, &adc_data, true);
-			if (ret < 0) {
-				goto end;
-			}
-			dataI[3] = adc_data;
+            
+			dataI[0] = cm_lp_info->dataR;
+			dataI[1] = cm_lp_info->dataG;
+			dataI[2] = cm_lp_info->dataB;
+			dataI[3] = cm_lp_info->dataW;
 			dataI[4] = 1;
-
-			if(false == rgbc_valid){                    
-					RGB_DBG("%s: tcs3400 status RGBC Invalid, get old RGBW data, after_setit:%d\n", __func__, g_rgb_status.wait_after_setit);
-					dataI[0] = cm_lp_info->dataR;
-					dataI[1] = cm_lp_info->dataG;
-					dataI[2] = cm_lp_info->dataB;
-					dataI[3] = cm_lp_info->dataW;       	
-			}else if(g_rgb_status.wait_after_setit) {    //Eason: check after setting integration time
-				do_gettimeofday(&it_set_now);
-
-				if(!is_it_time_passed(it_set_begin, it_set_now)) {
-					RGB_DBG("%s: Integration time is not ready yet, get old RGBW data\n", __func__);
-					dataI[0] = cm_lp_info->dataR;
-					dataI[1] = cm_lp_info->dataG;
-					dataI[2] = cm_lp_info->dataB;
-					dataI[3] = cm_lp_info->dataW;             
-				} else {
-					RGB_DBG("%s: tcs3400 status RGBC Valid, get new RGBW data\n", __func__);
-					cm_lp_info->dataR = dataI[0];
-					cm_lp_info->dataG = dataI[1];
-					cm_lp_info->dataB = dataI[2];
-					cm_lp_info->dataW = dataI[3];
-					g_rgb_status.wait_after_setit = false;
-				}
-			} else {
-				RGB_DBG_D("%s: tcs3400 don't need to wait_after_setit , get new RGBW data\n", __func__);			
-				cm_lp_info->dataR = dataI[0];
-				cm_lp_info->dataG = dataI[1];
-				cm_lp_info->dataB = dataI[2];
-				cm_lp_info->dataW = dataI[3];
-			}			
-
-			RGB_DBG_D("%s: cmd = DATA_READ_RGBW, dataR = %d, dataG = %d, dataB = %d, dataW = %d\n"
-					, __func__, cm_lp_info->dataR,cm_lp_info->dataG, cm_lp_info->dataB, cm_lp_info->dataW);
 
 			log_filter++;
 			if(log_filter % 30 == 1 || rgb_debugMode) {
@@ -1909,7 +2011,11 @@ static long rgbSensor_miscIoctl(struct file *file, unsigned int cmd, unsigned lo
 				RGB_DBG_E("%s: cmd = AGAIN_SET, copy_from_user error(%d)\n", __func__, again_setting);
 				goto end;
 			}
+			mutex_lock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time
+			ret = tcs3400_i2c_write(TCS3400_CONTROL, 0);			
 			ret = rgbSensor_gainSet(again_setting);
+			ret = tcs3400_i2c_write(TCS3400_CONTROL, TCS3400_EN_PWR_ON | TCS3400_EN_ALS | TCS3400_EN_ALS_IRQ);            
+			mutex_unlock(&rgbThread_lock);  //Eason add mutex prevent two thread access chip at same time
 			RGB_DBG_API("%s: cmd = AGAIN_SET, again_setting = %d, reg = %d\n", __func__,again_setting, cm_lp_info->gain);
 			break;            
 		default:
@@ -2097,12 +2203,18 @@ static struct i2c_driver tcs3400_driver = {
 static int __init tcs3400_init(void)
 {
 	//mutex_init(&g_i2c_lock);
+	mutex_init(&rgbThread_lock);
+	mutex_init(&rgb_asynch_mutex);	
+	Rear_RGB_delay_workqueue = create_singlethread_workqueue("rear_RGB_delay_wq");	    
 	return i2c_add_driver(&tcs3400_driver);
 }
 
 static void __exit tcs3400_exit(void)
 {
 	//mutex_destroy(&g_i2c_lock);
+	mutex_destroy(&rgbThread_lock);
+	mutex_destroy(&rgb_asynch_mutex);	
+	destroy_workqueue(Rear_RGB_delay_workqueue);    
 	i2c_del_driver(&tcs3400_driver);
 }
 

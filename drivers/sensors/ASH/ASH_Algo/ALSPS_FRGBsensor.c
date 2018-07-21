@@ -62,10 +62,10 @@ static struct wake_lock 			g_alsps_frgb_wake_lock;
 static struct hrtimer 				g_alsps_frgb_timer;
 static struct i2c_client 			*g_i2c_client;
 static int g_als_last_lux = 0;
-static int g_red_last_raw = 0;
-static int g_green_last_raw = 0;
-static int g_blue_last_raw = 0;
-static int g_ir_last_raw = 0;
+static int g_red_last_raw = -1;
+static int g_green_last_raw = -1;
+static int g_blue_last_raw = -1;
+static int g_ir_last_raw = -1;
 static char *g_error_mesg;
 static int resume_flag = 0;
 
@@ -124,6 +124,7 @@ extern void ftxxxx_disable_touch(bool flag);
 extern int get_audiomode(void);
 
 static int pocket_mode_threshold = 0;
+static int touch_enable = 1;
 
 /*****************************************/
 /* ALS / PS / FRGB data structure */
@@ -492,7 +493,7 @@ static int proximity_set_threshold(void)
 		pocket_mode_threshold = ret;
 		log("Proximity read Pocket Mode Calibration : %d\n", pocket_mode_threshold);
 	}else{
-		pocket_mode_threshold = 0;
+		pocket_mode_threshold = 1065;
 		err("Proximity read DEFAULT Pocket Mode Calibration : %d\n", pocket_mode_threshold);
 	}
 	
@@ -838,7 +839,7 @@ mutex_lock(&g_alsps_frgb_lock);
 			log("[Polling] Front RGB Sensor Report raw , red=%d, green=%d, blue=%d, ir=%d\n", red, green, blue, ir);
 		}
 
-		if ((0 == red || 0 == green || 0 == blue || 0 == ir) && (count < 15) && (!rgb_first_data_ready)) {
+		if ((0 == red || 0 == green || 0 == blue || 0 == ir) && (count < 7) && (!rgb_first_data_ready)) {
 			queue_delayed_work(ALSPS_FRGB_delay_workqueue, &FRGB_polling_raw_work, msecs_to_jiffies(FRGB_POLLING_FIRST_RAW));
 			count++;
 		} else {
@@ -863,6 +864,10 @@ mutex_lock(&g_alsps_frgb_lock);
 		data[1] = -1;
 		data[2] = -1;
 		data[3] = -1;
+		g_red_last_raw = -1;
+		g_green_last_raw = -1;
+		g_blue_last_raw = -1;
+		g_ir_last_raw = -1;
 		FRGBsensor_report_raw(data, sizeof(data));
 	}
 mutex_unlock(&g_alsps_frgb_lock);
@@ -1555,6 +1560,7 @@ int mproximity_store_switch_onoff(bool bOn)
 			proximity_turn_onoff(false);
 			psensor_report_abs(-1);
 			ftxxxx_disable_touch(false);
+			touch_enable = 1;
 		}			
 	}else{
 		log("Proximity is already %s", bOn?"ON":"OFF");
@@ -1786,6 +1792,29 @@ int mproximity_store_selection(int selection)
 	return 0;
 }
 
+/*For power key turn on screen and enable touch*/
+int mproximity_show_touch_enable(void)
+{
+	return touch_enable;
+}
+
+int mproximity_store_touch_enable(bool enable)
+{
+	int ret=0;
+	
+	if(enable && touch_enable == 0){
+		ftxxxx_disable_touch(false);
+		touch_enable = 1;
+		log("Proximity store enable touch: %d\n", touch_enable);
+	} else if(!enable && touch_enable == 1){
+		ftxxxx_disable_touch(true);
+		touch_enable = 0;
+		log("Proximity store disable touch: %d\n", touch_enable);
+	}
+	
+	return ret;
+}
+
 bool mlight_show_allreg(void)
 {
 	if(ALSPS_FRGB_hw_client->ALSPS_FRGB_hw_show_allreg == NULL) {
@@ -1929,6 +1958,9 @@ static psensor_ATTR_Extension mpsensor_ATTR_Extension = {
 	.proximity_show_error_mesg = mproximity_show_error_mesg,
 	.proximity_show_selection = mproximity_show_selection,
 	.proximity_store_selection = mproximity_store_selection,
+	/*For power key turn on screen and enable touch*/
+	.proximity_show_touch_enable = mproximity_show_touch_enable,
+	.proximity_store_touch_enable = mproximity_store_touch_enable,
 };
 
 static lsensor_ATTR_Extension mlsensor_ATTR_Extension = {
@@ -2006,6 +2038,7 @@ static void proximity_work(int state)
 			audio_mode = get_audiomode();
 			if (0 == audio_mode || 2 == audio_mode || 3 == audio_mode) {
 				ftxxxx_disable_touch(false);
+				touch_enable = 1;
 			}
 		} else if (ALSPS_INT_PS_CLOSE == state) {
 			if(pocket_mode_threshold > 0 && adc > pocket_mode_threshold){
@@ -2019,6 +2052,7 @@ static void proximity_work(int state)
 			audio_mode = get_audiomode();
 			if (2 == audio_mode || 3 == audio_mode) {
 				ftxxxx_disable_touch(true);
+				touch_enable = 0;
 			}
 		} else {
 			err("[ISR] Proximity Detect Object ERROR. (adc = %d)\n", adc);

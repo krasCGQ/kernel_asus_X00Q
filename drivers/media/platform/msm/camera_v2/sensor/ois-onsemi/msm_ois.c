@@ -1032,7 +1032,7 @@ static int32_t msm_ois_platform_probe(struct platform_device *pdev)
 	uint32_t id_info[3];
 	struct msm_camera_power_ctrl_t *power_info = NULL;
 	struct msm_ois_board_info *ob_info = NULL;
-	//uint32_t act_ver = 0;//ASUS_BSP Lucien +++: Disable auto update
+	uint32_t act_ver = 0;//ASUS_BSP Lucien +++: Disable auto update
 	pr_err("%s: E", __func__);
 	/*ASUS_BSP --- bill_chen "Implement ois"*/
 	CDBG("Enter\n");
@@ -1220,8 +1220,8 @@ static int32_t msm_ois_platform_probe(struct platform_device *pdev)
 		pr_err("%s g_ois_status = %d\n", __func__, g_ois_status);
 		//pr_err("calling msm_camera_power_down\n");
 		//ASUS_BSP Lucien +++: Disable auto update
-		//rc = onsemi_read_dword(msm_ois_t,0x8008,&act_ver);
-		//rc = msm_ois_check_update_fw(msm_ois_t, 0, msm_ois_t->fw_ver, ((act_ver & 0x0000FF00)>>8));
+		rc = onsemi_read_dword(msm_ois_t,0x8008,&act_ver);
+		rc = msm_ois_check_update_fw(msm_ois_t, 0, msm_ois_t->fw_ver, ((act_ver & 0x0000FF00)>>8));
 		//ASUS_BSP Lucien ---: Disable auto update
 
 		rc = msm_camera_power_down(power_info, msm_ois_t->ois_device_type,
@@ -1304,8 +1304,19 @@ uint32_t current_fw, uint8_t vcm)
 	uint32_t after_update = 0;
 	bool update_fw = false;
 
-	if(((current_fw >>24) == 0x03 && current_fw < LiteOn_VERNUM))
+	if(((current_fw >>24) == 0x03 && current_fw < LiteOn_VERNUM) ||
+		((current_fw >>24) == 0x05 && current_fw < Primax_VERNUM))
+	{
+		if(vcm == 0x02)
+		{
 			update_fw = true;
+		}
+		else
+		{
+			update_fw = false;
+			pr_info("%s: VCM %x is not version 2. Do not update\n", __func__, vcm);
+		}
+	}
 #if 0
 	//ASUS_BSP Lucien +++: For recovery wrong ois fw issue
 	if( (current_fw >>24) == 0x03 && g_ASUS_hwID == ZE620KL_ER )
@@ -1323,6 +1334,7 @@ uint32_t current_fw, uint8_t vcm)
 		pr_info("%s: device fw is not the lastest. Update OIS fw.\n", __func__);
 
 		rc = F40_FlashDownload(o_ctrl, (uint8_t)mode, (current_fw>>24), vcm);
+		pr_info("%s: OIS normal update vcm ver. %x\n", __func__, vcm);
 
 		pr_info("%s: F40_FlashDownload rc %d\n", __func__, rc);
 		if(rc < 0) {
@@ -1333,6 +1345,7 @@ uint32_t current_fw, uint8_t vcm)
 		    delay_ms(30);
 		    rc = onsemi_read_dword(o_ctrl,0x8000,&after_update);
 		    pr_info("%s: After update firmware version 0x%4X\n", __func__, after_update);
+			o_ctrl->fw_ver = after_update;
 		}
 	}
 	else

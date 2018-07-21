@@ -5,6 +5,8 @@
 #include	"FromCode_03_00.h"    //ASUS_BSP Lucien +++: LiteOn old vcm FW header
 #include	"FromCode_03_01.h"    //ASUS_BSP Lucien +++: LiteOn new vcm FW header
 #include	"FromCode_03_02.h"
+#include	"FromCode_05_01.h"
+#include	"FromCode_05_02.h"
 #include	"onsemi_ois_api.h"
 #include	"onsemi_ois_pmemcode.h"
 
@@ -21,6 +23,8 @@ const DOWNLOAD_TBL DTbl[] = {
 	{0x0300, CcMagicCodeF40_03_00, sizeof(CcMagicCodeF40_03_00), CcFromCodeF40_03_00, sizeof(CcFromCodeF40_03_00) },
 	{0x0301, CcMagicCodeF40_03_01, sizeof(CcMagicCodeF40_03_01), CcFromCodeF40_03_01, sizeof(CcFromCodeF40_03_01) },
 	{0x0302, CcMagicCodeF40_03_02, sizeof(CcMagicCodeF40_03_02), CcFromCodeF40_03_02, sizeof(CcFromCodeF40_03_02) },
+	{0x0501, CcMagicCodeF40_05_01, sizeof(CcMagicCodeF40_05_01), CcFromCodeF40_05_01, sizeof(CcFromCodeF40_05_01) },
+	{0x0502, CcMagicCodeF40_05_02, sizeof(CcMagicCodeF40_05_02), CcFromCodeF40_05_02, sizeof(CcFromCodeF40_05_02) },
 	{0xFFFF, (void*)0,                0,                               (void*)0,               0                  }
 };
 
@@ -195,11 +199,11 @@ int onsemi_switch_mode(struct msm_ois_ctrl_t *ctrl, uint8_t mode)
 			break;
 		case 1:
 			reg_addr[0] = 0xF013;
-			reg_data[0] = 0x00000000; //onsemi move mode
+			reg_data[0] = 0x00000002; //onsemi move mode
 			break;
 		case 2:
 			reg_addr[0] = 0xF013;
-			reg_data[0] = 0x00000001; //onsemi still mode
+			reg_data[0] = 0x00000003; //onsemi still mode
 			break;
 		default:
 			pr_err("Not supported ois mode %d\n",mode);

@@ -577,6 +577,47 @@ ssize_t  ATT_proximity_store_selection(struct device *dev,
 	return count;
 }
 
+/*For power key turn on screen and enable touch*/
+ssize_t  ATT_proximity_show_enable_touch(struct device *dev, 
+	struct device_attribute *attr, char *buf)
+{
+	int touch_enable = 0;
+	if(g_psensor_ATTR->ATTR_Extension->proximity_show_touch_enable== NULL) {
+		err("proximity_show_touch_enable NOT SUPPORT. \n");
+		return sprintf(buf, "NOT SUPPORT\n");
+	}
+	
+	touch_enable = g_psensor_ATTR->ATTR_Extension->proximity_show_touch_enable();
+	return sprintf(buf, "%d\n", touch_enable);
+}
+
+ssize_t  ATT_proximity_store_enable_touch(struct device *dev, 
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long touch_enable;	
+
+	if(g_psensor_ATTR->ATTR_Extension->proximity_store_touch_enable== NULL) {
+		err("proximity_store_touch_enable NOT SUPPORT. \n");
+		return count;
+	}
+	
+	if ((kstrtoul(buf, 10, &touch_enable) < 0))
+		return -EINVAL;
+	
+	if(touch_enable == 1){
+		if(g_psensor_ATTR->ATTR_Extension->proximity_store_touch_enable(true) < 0)
+			return -EINVAL;	
+	}else if(touch_enable == 0){
+		if(g_psensor_ATTR->ATTR_Extension->proximity_store_touch_enable(false) < 0)
+			return -EINVAL;	
+	}else {
+		err("Proximity store touch enable with NEGATIVE value. (%lu) \n", touch_enable);
+		return -EINVAL;
+	}
+	log("Proximity store touch_enable: %lu\n", touch_enable);
+	
+	return count;
+}
 
 static struct device_attribute proximity_property_attrs[] = {
 	/*read only*/
@@ -605,6 +646,9 @@ static struct device_attribute proximity_property_attrs[] = {
 
 	/*For transition period from 3/5 to 2/4*/
 	__ATTR(selection, 0664, ATT_proximity_show_selection, ATT_proximity_store_selection),
+	
+	/*For power key turn on screen and enable touch*/
+	__ATTR(enable_touch, 0664, ATT_proximity_show_enable_touch, ATT_proximity_store_enable_touch),
 };
 
 int psensor_ATTR_register(psensor_ATTR *mATTR)

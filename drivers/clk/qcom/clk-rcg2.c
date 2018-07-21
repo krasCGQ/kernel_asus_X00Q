@@ -211,6 +211,8 @@ clk_rcg2_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 {
 	struct clk_rcg2 *rcg = to_clk_rcg2(hw);
 	u32 cfg, hid_div, m = 0, n = 0, mode = 0, mask;
+	int ret;
+	unsigned long calculated_rate;
 
 	if (rcg->enable_safe_config && !clk_hw_is_prepared(hw)) {
 		if (!rcg->current_freq)
@@ -218,7 +220,10 @@ clk_rcg2_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 		return rcg->current_freq;
 	}
 
-	regmap_read(rcg->clkr.regmap, rcg->cmd_rcgr + CFG_REG, &cfg);
+	ret = regmap_read(rcg->clkr.regmap, rcg->cmd_rcgr + CFG_REG, &cfg);
+	if (ret != 0) {
+		printk("clk_rcg2_recalc_rate regmap_read error [%d], parent rate %lu\n", ret, parent_rate);
+	}
 
 	if (rcg->mnd_width) {
 		mask = BIT(rcg->mnd_width) - 1;
@@ -235,8 +240,14 @@ clk_rcg2_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 	mask = BIT(rcg->hid_width) - 1;
 	hid_div = cfg >> CFG_SRC_DIV_SHIFT;
 	hid_div &= mask;
+	calculated_rate = calc_rate(parent_rate, m, n, mode, hid_div);
 
-	return calc_rate(parent_rate, m, n, mode, hid_div);
+	if (calculated_rate == 300000000 && parent_rate == 300000000) {
+		printk("clk_rcg2_recalc_rate returned rate 300000000 as parent rate, (m, n, cfg, hid_div) = (%d, %d, %d, %d)",
+			m, n, cfg, hid_div);
+	}
+
+	return calculated_rate;
 }
 
 static int _freq_tbl_determine_rate(struct clk_hw *hw,

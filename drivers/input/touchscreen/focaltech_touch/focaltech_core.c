@@ -722,8 +722,8 @@ static int fts_input_dev_report_b(struct ts_event *event, struct fts_ts_data *da
             data->touchs |= BIT(event->au8_finger_id[i]);
 		/* +++ asus add for print touch location +++ */
 			if ((report_touch_locatoin_count[i] % 200) == 0) {
-				printk("[Focal][Touch] report id=%d event=%d x=%d y=%d pressure=%d area=%d\n", event->au8_finger_id[i],
-				event->au8_touch_event[i], event->au16_x[i], event->au16_y[i], event->pressure[i], event->area[i]);
+				printk("[Focal][Touch] report id=%d x=%d y=%d\n", event->au8_finger_id[i],
+				event->au16_x[i], event->au16_y[i]);
 				report_touch_locatoin_count[i] = 1;
 			}
 		report_touch_locatoin_count[i] += 1;
@@ -784,8 +784,8 @@ static int fts_input_dev_report_b(struct ts_event *event, struct fts_ts_data *da
     	if (touch_down_up_status == 0) {
 			touch_down_up_status = 1;
 			printk("[Focal][Touch] touch down !\n");
-			printk("[Focal][Touch] id=%d event=%d x=%d y=%d pressure=%d area=%d\n", event->au8_finger_id[0],
-			event->au8_touch_event[0], event->au16_x[0], event->au16_y[0], event->pressure[0], event->area[0]);
+			printk("[Focal][Touch] id=%d x=%d y=%d\n", event->au8_finger_id[0],
+			event->au16_x[0], event->au16_y[0]);
 		}
         input_report_key(data->input_dev, BTN_TOUCH, event->touch_point > 0);
     }
@@ -833,8 +833,8 @@ static int fts_input_dev_report_a(struct ts_event *event,struct fts_ts_data *dat
             input_report_abs(data->input_dev, ABS_MT_POSITION_Y, event->au16_y[i]);
 			/* +++ asus add for print touch location +++ */
 			if ((report_touch_locatoin_count[i] % 200) == 0) {
-				printk("[Focal][Touch] report id=%d event=%d x=%d y=%d pressure=%d area=%d\n", event->au8_finger_id[i],
-				event->au8_touch_event[i], event->au16_x[i], event->au16_y[i], event->pressure[i], event->area[i]);
+				printk("[Focal][Touch] report id=%d x=%d y=%d\n", event->au8_finger_id[i],
+				event->au16_x[i], event->au16_y[i]);
 				report_touch_locatoin_count[i] = 1;
 			}
 			report_touch_locatoin_count[i] += 1;
@@ -877,8 +877,8 @@ static int fts_input_dev_report_a(struct ts_event *event,struct fts_ts_data *dat
 		if (touch_down_up_status == 0) {
 			touch_down_up_status = 1;
 			printk("[Focal][Touch] touch down !\n");
-			printk("[Focal][Touch] id=%d event=%d x=%d y=%d pressure=%d area=%d\n", event->au8_finger_id[0],
-			event->au8_touch_event[0], event->au16_x[0], event->au16_y[0], event->pressure[0], event->area[0]);
+			printk("[Focal][Touch] id=%d x=%d y=%d\n", event->au8_finger_id[0],
+			event->au16_x[0], event->au16_y[0]);
 		}
     }
 

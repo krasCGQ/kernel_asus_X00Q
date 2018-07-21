@@ -162,8 +162,8 @@
 	qcom,fg-cutoff-voltage = <3400>; //ASUS BSP : LiJen Battery
 	qcom,fg-empty-voltage = <2800>; //ASUS BSP : LiJen Battery
 	qcom,fg-cutoff-current = <100>; //ASUS BSP : LiJen fine tune msoc for low temperature 
-	qcom,fg-esr-tight-filter-micro-pct = <2500>; //ASUS BSP : LiJen Battery
-	qcom,fg-esr-broad-filter-micro-pct = <2700>; //ASUS BSP : LiJen Battery
+	qcom,fg-esr-tight-filter-micro-pct = <20000>; //ASUS BSP : LiJen Battery
+	qcom,fg-esr-broad-filter-micro-pct = <25000>; //ASUS BSP : LiJen Battery
 	qcom,fg-esr-tight-lt-filter-micro-pct = <2000>; //ASUS BSP : LiJen Battery
 	qcom,fg-esr-broad-lt-filter-micro-pct = <2200>; //ASUS BSP : LiJen Battery
 	qcom,slope-limit-coeffs = <1 1 1 1>; //ASUS BSP : LiJen Battery

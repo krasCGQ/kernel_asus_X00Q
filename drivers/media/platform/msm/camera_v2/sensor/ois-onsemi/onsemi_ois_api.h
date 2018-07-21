@@ -13,7 +13,8 @@
 //==============================================================================
 #define	MODULE_VENDOR	0
 #define	MDL_VER			2
-#define	LiteOn_VERNUM		0x03130203
+#define	LiteOn_VERNUM		0x03130206
+#define Primax_VERNUM		0x05130206
 
 typedef	signed char			 INT_8;
 typedef	short				 INT_16;

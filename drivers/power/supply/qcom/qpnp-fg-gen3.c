@@ -5284,7 +5284,7 @@ static int fg_parse_dt(struct fg_chip *chip)
 	if (!rc)
 		chip->dt.rconn_mohms = temp;
 
-	chip->dt.rconn_mohms = ASUS_RCONN_MOHM;
+	//chip->dt.rconn_mohms = ASUS_RCONN_MOHM;
 	BAT_DBG("rconn_mohms: %d",chip->dt.rconn_mohms);
 	
 	rc = of_property_read_u32(node, "qcom,fg-esr-filter-switch-temp",
@@ -5301,7 +5301,7 @@ static int fg_parse_dt(struct fg_chip *chip)
 	else
 		chip->dt.esr_tight_flt_upct = temp;
 
-	chip->dt.esr_tight_flt_upct = ASUS_ESR_TIGHT_FLT_UPCT;
+	//chip->dt.esr_tight_flt_upct = ASUS_ESR_TIGHT_FLT_UPCT;
 	BAT_DBG("esr_tight_flt_upct: %d",chip->dt.esr_tight_flt_upct);
 
 
@@ -5313,7 +5313,7 @@ static int fg_parse_dt(struct fg_chip *chip)
 	else
 		chip->dt.esr_broad_flt_upct = temp;
 
-	chip->dt.esr_broad_flt_upct = ASUS_ESR_BROAD_FLT_UPCT;
+	//chip->dt.esr_broad_flt_upct = ASUS_ESR_BROAD_FLT_UPCT;
 	BAT_DBG("esr_broad_flt_upct: %d",chip->dt.esr_broad_flt_upct);
 
 
@@ -5920,7 +5920,7 @@ static ssize_t batt_switch_name_Titan(struct switch_dev *sdev, char *buf)
 	char bat_cellCode = 'X';
 	int bat_ID = 0;
 	int bat_profileVersion = 1;
-	const char* bat_driverVersion = "14.1000.1706.7";
+	const char* bat_driverVersion = "14.1000.1706.8";
 	if (g_fgChip) {
 		if(g_ASUS_hwID <= ZE620KL_SR){
 			if (g_fgChip->profile_available && !strcmp(g_fgChip->bp.batt_type_str, BATT_TYPE_CSL_V2_4P35)) {

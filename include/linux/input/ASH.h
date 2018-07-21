@@ -162,6 +162,10 @@ typedef struct{
 	/*For transition period from 3/5 to 2/4*/
 	int (*proximity_show_selection)(void);
 	int (*proximity_store_selection)(int selection);
+	
+	/*For power key turn on screen and enable touch*/
+	int (*proximity_show_touch_enable)(void);
+	int (*proximity_store_touch_enable)(bool enable);
 }psensor_ATTR_Extension;
 
 /**
