@@ -74,7 +74,8 @@ extern int g_asus_lcdID;
 extern void asus_psensor_disable_touch(bool enable);
 extern bool g_FP_Disable_Touch ;
 extern int get_audiomode(void);
-extern u32 asus_lcd_read_hw_id(void);
+extern u32 asus_lcd_hw_id_0xDC;
+extern u32 asus_lcd_hw_id_0xDA;
 extern bool g_asus_lcd_power_off;
 
 unsigned char IC_FW;
@@ -1988,7 +1989,8 @@ static ssize_t fts_show_tpfwver(struct switch_dev *sdev, char *buf)
 		#if defined(ASUS_FTM_BUILD) || defined(ASUS_FTM)
 		num_read_chars = snprintf(buf, PAGE_SIZE, "0x%x-0x%x\n", g_vendor_id, IC_FW);
 		#else
-		num_read_chars = snprintf(buf, PAGE_SIZE, "0x%x-0x%x-0x%x\n", g_vendor_id, IC_FW, asus_lcd_read_hw_id());
+		num_read_chars = snprintf(buf, PAGE_SIZE, (asus_lcd_hw_id_0xDC > 0xf ? "0x%x-0x%x-0x%x%x\n" : "0x%x-0x%x-0x%x0%x\n"),
+			g_vendor_id, IC_FW, asus_lcd_hw_id_0xDA, asus_lcd_hw_id_0xDC);
 		#endif
 	}
 	return num_read_chars;

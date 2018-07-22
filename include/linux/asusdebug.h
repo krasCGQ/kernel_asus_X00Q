@@ -73,3 +73,4 @@ void SubSysHealthRecord(const char *fmt, ...);/*ASUS-BBSP SubSys Health Record+*
 //20101202_Bruno: added to get debug mask value
 bool isASUS_MSK_set(const char *fmt);
 #endif
+void write_magic_number(void);

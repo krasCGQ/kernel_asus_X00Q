@@ -1634,6 +1634,23 @@ static int mmc_wait_for_data_req_done(struct mmc_host *host,
 			    mmc_card_removed(host->card)) {
 				err = host->areq->err_check(host->card,
 							    host->areq);
+			//ASUS_BSP +++: send mmc1 io error uevent
+			if(err)
+			{
+				if(!strcmp("mmc1",mmc_hostname(host)))
+				{
+					int cd_state = mmc_gpio_get_cd(host);
+					printk("[mmc_debug][%s] cd_state=%d\n", mmc_hostname(host),cd_state);
+
+					if(cd_state)
+					{
+						struct device *dev = mmc_dev(host);
+						printk("[mmc_debug][%s] mmc_wait_for_data_req_done err=%d\n", mmc_hostname(host),err);
+						kobject_uevent(&dev->kobj, KOBJ_IO_ERROR);
+					}
+				}
+			}
+			//ASUS_BSP ---
 				break; /* return err */
 			} else {
 				mmc_retune_recheck(host);

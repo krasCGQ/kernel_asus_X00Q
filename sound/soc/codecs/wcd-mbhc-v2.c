@@ -363,10 +363,13 @@ out_micb_en:
 			/* enable current source and disable mb, pullup*/
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
         #endif
-		if (!mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET)
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
-		else
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
+		if (mbhc->current_plug > MBHC_PLUG_TYPE_NONE)	{
+			if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
+				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+			else
+				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+		} else
+			pr_debug("%s: current_plug state wrong! (mbhc->current_plug(%d))\n", __func__, mbhc->current_plug);
 		//Rice
 		/* configure cap settings properly when micbias is disabled */
 		if (mbhc->mbhc_cb->set_cap_mode)
@@ -381,16 +384,26 @@ out_micb_en:
 			hphlocp_off_report(mbhc, SND_JACK_OC_HPHL);
 		clear_bit(WCD_MBHC_EVENT_PA_HPHL, &mbhc->event_state);
 		/* check if micbias is enabled */
-		if (micbias2)
+		if (micbias2) {
 			/* Disable cs, pullup & enable micbias */
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			if (mbhc->current_plug > MBHC_PLUG_TYPE_NONE)	{
+				if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+				else
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			} else
+				pr_debug("%s: current_plug state wrong! (mbhc->current_plug(%d))\n", __func__, mbhc->current_plug);
+		}
 		else
 		{
 			/* Disable micbias, pullup & enable cs */
-			if (!mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET)
-				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
-			else
-				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);//Rice
+			if (mbhc->current_plug > MBHC_PLUG_TYPE_NONE)	{
+				if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+				else
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			} else
+				pr_debug("%s: current_plug state wrong! (mbhc->current_plug(%d))\n", __func__, mbhc->current_plug);
 		}
 		mutex_unlock(&mbhc->hphl_pa_lock);
 		clear_bit(WCD_MBHC_ANC0_OFF_ACK, &mbhc->hph_anc_state);
@@ -404,16 +417,26 @@ out_micb_en:
 			hphrocp_off_report(mbhc, SND_JACK_OC_HPHR);
 		clear_bit(WCD_MBHC_EVENT_PA_HPHR, &mbhc->event_state);
 		/* check if micbias is enabled */
-		if (micbias2)
+		if (micbias2) {
 			/* Disable cs, pullup & enable micbias */
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			if (mbhc->current_plug > MBHC_PLUG_TYPE_NONE)	{
+				if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+				else
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			} else
+				pr_debug("%s: current_plug state wrong! (mbhc->current_plug(%d))\n", __func__, mbhc->current_plug);
+		}
 		else
 		{
 			/* Disable micbias, pullup & enable cs */
-			if (!mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET)
-				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
-			else
-				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);//Rice
+			if (mbhc->current_plug > MBHC_PLUG_TYPE_NONE)	{
+				if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+				else
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			} else
+				pr_debug("%s: current_plug state wrong! (mbhc->current_plug(%d))\n", __func__, mbhc->current_plug);
 		}
 		mutex_unlock(&mbhc->hphr_pa_lock);
 		clear_bit(WCD_MBHC_ANC1_OFF_ACK, &mbhc->hph_anc_state);
@@ -421,22 +444,53 @@ out_micb_en:
 	case WCD_EVENT_PRE_HPHL_PA_ON:
 		set_bit(WCD_MBHC_EVENT_PA_HPHL, &mbhc->event_state);
 		/* check if micbias is enabled */
-		if (micbias2)
+		if (micbias2) {
 			/* Disable cs, pullup & enable micbias */
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			if (mbhc->current_plug > MBHC_PLUG_TYPE_NONE)	{
+				if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+				else
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			} else
+				pr_debug("%s: current_plug state wrong! (mbhc->current_plug(%d))\n", __func__, mbhc->current_plug);
+		}
 		else
+		{
 			/* Disable micbias, enable pullup & cs */
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
+			if (mbhc->current_plug > MBHC_PLUG_TYPE_NONE)	{
+				if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+				else
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			} else
+				pr_debug("%s: current_plug state wrong! (mbhc->current_plug(%d))\n", __func__, mbhc->current_plug);
+		}
 		break;
 	case WCD_EVENT_PRE_HPHR_PA_ON:
 		set_bit(WCD_MBHC_EVENT_PA_HPHR, &mbhc->event_state);
+
 		/* check if micbias is enabled */
-		if (micbias2)
+		if (micbias2) {
 			/* Disable cs, pullup & enable micbias */
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			if (mbhc->current_plug > MBHC_PLUG_TYPE_NONE)	{
+				if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+				else
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			} else
+				pr_debug("%s: current_plug state wrong! (mbhc->current_plug(%d))\n", __func__, mbhc->current_plug);
+		}
 		else
+		{
 			/* Disable micbias, enable pullup & cs */
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
+			if (mbhc->current_plug > MBHC_PLUG_TYPE_NONE)	{
+				if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+				else
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			} else
+				pr_debug("%s: current_plug state wrong! (mbhc->current_plug(%d))\n", __func__, mbhc->current_plug);
+		}
 		break;
 	case WCD_EVENT_OCP_OFF:
 		mbhc->mbhc_cb->irq_control(mbhc->codec,
@@ -1128,7 +1182,7 @@ static void wcd_enable_mbhc_supply(struct wcd_mbhc *mbhc,
 */
 			else
 				//wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
-				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
+				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 //Rice
 		} else if (plug_type == MBHC_PLUG_TYPE_HEADPHONE) {
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);

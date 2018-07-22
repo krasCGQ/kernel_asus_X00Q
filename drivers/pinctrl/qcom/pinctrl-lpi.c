@@ -59,6 +59,7 @@
 #define LPI_GPIO_FUNC_FUNC5			"func5"
 
 static bool lpi_dev_up;
+
 /* The index of each function in lpi_gpio_functions[] array */
 enum lpi_gpio_func_index {
 	LPI_GPIO_FUNC_INDEX_GPIO	= 0x00,
@@ -68,6 +69,8 @@ enum lpi_gpio_func_index {
 	LPI_GPIO_FUNC_INDEX_FUNC4	= 0x04,
 	LPI_GPIO_FUNC_INDEX_FUNC5	= 0x05,
 };
+
+static struct lpi_gpio_state *g_state;
 
 /**
  * struct lpi_gpio_pad - keep current GPIO settings
@@ -509,6 +512,211 @@ static const struct gpio_chip lpi_gpio_template = {
 	.dbg_show		= lpi_gpio_dbg_show,
 };
 
+//ASUS BSP PeterYeh : dump all LPI gpio regiser function +++
+static bool dump_all_lpi_gpio = true;
+static int get_pinctrl_all_lpi_gp_dump(char *buffer, const struct kernel_param *kp)
+{
+	struct pinctrl_dev *pctldev;
+	struct pinctrl_pin_desc pindesc;
+	struct lpi_gpio_pad *pad;
+	struct gpio_chip chip = g_state -> chip;
+	int count = 0;
+	u8 max_num = chip.ngpio;
+	u32 ctl_reg, io_reg;
+	unsigned int pin_no = 0;
+	u8 bias, func, drv_ma, direct, value;
+
+	count = sprintf(buffer, "========== Start dump LPI GPIO==========\n");
+	count += sprintf(buffer + count, "Total LPI GPIO pins : %d\n", max_num);
+
+	pctldev = g_state->ctrl;
+
+	for (pin_no = 0; pin_no < max_num; pin_no++) {
+		pindesc = pctldev->desc->pins[pin_no];
+		pad = pctldev->desc->pins[pin_no].drv_data;
+		io_reg = lpi_gpio_read(pad, LPI_GPIO_REG_DIR_CTL);
+		ctl_reg = lpi_gpio_read(pad, LPI_GPIO_REG_VAL_CTL);
+		count += sprintf(buffer + count, "[GP][%03d] cfg_val  :0x%04x , inout_val:0x%04x\n", pin_no, ctl_reg, io_reg);
+
+		bias = ctl_reg & 0x3;
+		func = (ctl_reg & 0x3C) >> 2;
+		drv_ma = (ctl_reg & 0x1c0) >> 6;
+		direct = (ctl_reg & 0x200) >> 9;
+		value = io_reg & 0x1;
+
+		printk("[Pinctrl] [LPI_GP][%03d] bias 0x%x func 0x%x drv_ma 0x%x direct 0x%x value 0x%x\n", pin_no, bias, func, drv_ma, direct, value);
+
+		count += sprintf(buffer+count, "          ");
+		count += sprintf(buffer+count, "%s_",direct?"OUTPUT":"INPUT" );
+		count += sprintf(buffer+count, "%s, ",value?"H":"L" );
+		count += sprintf(buffer+count, "BIAS_");
+		switch(bias){
+			case 0:
+				count += sprintf(buffer+count, "NO_PULL, ");
+			break;
+			case 1:
+				count += sprintf(buffer+count, "PULL_DOWN, ");
+			break;
+			case 2:
+				count += sprintf(buffer+count, "KEEPER, ");
+			break;
+			case 3:
+				count += sprintf(buffer+count, "PULL_UP, ");
+			break;
+			default:
+				count += sprintf(buffer+count, "UNKNOW, ");
+			break;
+		}
+
+		count += sprintf(buffer+count, "DRV_");
+		switch(drv_ma){
+			case 0:
+				count += sprintf(buffer+count, "2_MA, ");
+			break;
+			case 1:
+				count += sprintf(buffer+count, "4_MA, ");
+			break;
+			case 2:
+				count += sprintf(buffer+count, "6_MA, ");
+			break;
+			case 3:
+				count += sprintf(buffer+count, "8_MA, ");
+			break;
+			case 4:
+				count += sprintf(buffer+count, "10_MA, ");
+			break;
+			case 5:
+				count += sprintf(buffer+count, "12_MA, ");
+			break;
+			case 6:
+				count += sprintf(buffer+count, "14_MA, ");
+			break;
+			case 7:
+				count += sprintf(buffer+count, "16_MA, ");
+			break;
+			default:
+				count += sprintf(buffer+count, "UNKNOW, ");
+		}
+		count += sprintf(buffer+count, "FUN_%d\n", func);
+	}
+
+	return count;
+}
+static struct kernel_param_ops dump_all_lpi_gp_ops = {
+	.get = get_pinctrl_all_lpi_gp_dump,
+};
+module_param_cb(dump_all_lpi_gpio, &dump_all_lpi_gp_ops, &dump_all_lpi_gpio, 0644);
+MODULE_PARM_DESC(dump_all_lpi_gpio, "Dump LPI GPIO register.");
+//ASUS BSP PeterYeh : dump all gpio regiser function ---
+
+//ASUS BSP PeterYeh : dump specific gpio regiser function +++
+static bool lpi_gpio = true;
+static unsigned int gpio_index = 0;
+static int set_pinctrl_lpi_gp_dump(const char *val, const struct kernel_param *kp)
+{
+	int ret = 0;
+
+	ret = kstrtouint(val, 10, &gpio_index);
+	if (ret < 0)
+		return -EINVAL;
+
+	return 0;
+}
+static int get_pinctrl_lpi_gp_dump(char *buffer, const struct kernel_param *kp)
+{
+	struct pinctrl_dev *pctldev;
+	struct pinctrl_pin_desc pindesc;
+	struct lpi_gpio_pad *pad;
+	struct gpio_chip chip = g_state -> chip;
+	u8 max_num = chip.ngpio;
+
+	int count = 0;
+	u8 bias, func, drv_ma, direct, value;
+	u32 ctl_reg, io_reg;
+
+	if(gpio_index > (max_num -1)) {
+		count = sprintf(buffer, "[LPI_GP][%03d] is not exist!!! Total pins are 0 ~ %d\n", gpio_index, (max_num-1));
+		return count;
+	}
+
+	pctldev = g_state->ctrl;
+	pindesc = pctldev->desc->pins[gpio_index];
+	pad = pctldev->desc->pins[gpio_index].drv_data;
+	io_reg = lpi_gpio_read(pad, LPI_GPIO_REG_DIR_CTL);
+	ctl_reg = lpi_gpio_read(pad, LPI_GPIO_REG_VAL_CTL);
+
+	count = sprintf(buffer, "[LPI_GP][%03d] cfg_val  :0x%04x , inout_val:0x%04x\n", gpio_index, ctl_reg, io_reg);
+
+	bias = ctl_reg & 0x3;
+	func = (ctl_reg & 0x3C) >> 2;
+	drv_ma = (ctl_reg & 0x1c0) >> 6;
+	direct = (ctl_reg & 0x200) >> 9;
+	value = io_reg & 0x1;
+
+	printk("[Pinctrl] [LPI_GP][%03d] bias 0x%x func 0x%x drv_ma 0x%x direct 0x%x value 0x%x\n", gpio_index, bias, func, drv_ma, direct, value);
+
+	count += sprintf(buffer+count, "          ");
+	count += sprintf(buffer+count, "%s_",direct?"OUTPUT":"INPUT" );
+	count += sprintf(buffer+count, "%s, ",value?"H":"L" );
+	count += sprintf(buffer+count, "BIAS_");
+	switch(bias){
+		case 0:
+			count += sprintf(buffer+count, "NO_PULL, ");
+		break;
+		case 1:
+			count += sprintf(buffer+count, "PULL_DOWN, ");
+		break;
+		case 2:
+			count += sprintf(buffer+count, "KEEPER, ");
+		break;
+		case 3:
+			count += sprintf(buffer+count, "PULL_UP, ");
+		break;
+		default:
+			count += sprintf(buffer+count, "UNKNOW, ");
+		break;
+	}
+
+	count += sprintf(buffer+count, "DRV_");
+	switch(drv_ma){
+		case 0:
+			count += sprintf(buffer+count, "2_MA, ");
+		break;
+		case 1:
+			count += sprintf(buffer+count, "4_MA, ");
+		break;
+		case 2:
+			count += sprintf(buffer+count, "6_MA, ");
+		break;
+		case 3:
+			count += sprintf(buffer+count, "8_MA, ");
+		break;
+		case 4:
+			count += sprintf(buffer+count, "10_MA, ");
+		break;
+		case 5:
+			count += sprintf(buffer+count, "12_MA, ");
+		break;
+		case 6:
+			count += sprintf(buffer+count, "14_MA, ");
+		break;
+		case 7:
+			count += sprintf(buffer+count, "16_MA, ");
+		break;
+		default:
+			count += sprintf(buffer+count, "UNKNOW, ");
+	}
+	count += sprintf(buffer+count, "FUN_%d\n", func);
+	return count;
+}
+static struct kernel_param_ops dump_lpi_gp_ops = {
+	.set = set_pinctrl_lpi_gp_dump,
+	.get = get_pinctrl_lpi_gp_dump,
+};
+module_param_cb(lpi_gpio, &dump_lpi_gp_ops, &lpi_gpio, 0644);
+MODULE_PARM_DESC(lpi_gpio, "Dump LPI GPIO register.");
+//ASUS BSP PeterYeh : dump specific gpio regiser function ---
+
 static int lpi_pinctrl_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -532,7 +740,7 @@ static int lpi_pinctrl_probe(struct platform_device *pdev)
 
 	WARN_ON(npins > ARRAY_SIZE(lpi_gpio_groups));
 
-	state = devm_kzalloc(dev, sizeof(*state), GFP_KERNEL);
+	g_state = state = devm_kzalloc(dev, sizeof(*state), GFP_KERNEL);
 	if (!state)
 		return -ENOMEM;
 

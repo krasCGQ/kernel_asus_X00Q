@@ -68,15 +68,18 @@ void asus_tcon_cmd_get(char cmd, int rlen);
 void asus_tcon_cmd_set_unlocked(char *cmd, short len);
 static struct mutex asus_lcd_tcon_cmd_mutex;
 static struct mutex asus_lcd_bl_cmd_mutex;
-u32 asus_lcd_hw_id = 0xA2;
+
 char asus_lcd_dimming_cmd[2] = {0x53, 0x2C};
 char asus_lcd_cabc_mode[2]   = {0x55, Still_MODE};
 char asus_lcd_invert_mode[2]   = {0x21, 0x21};
+
+// Asus Ara AUO LCD HW ID, default value is 1st MP panel
+u32 asus_lcd_hw_id_0xDA = 0x61;
+u32 asus_lcd_hw_id_0xDC = 0xA2;
+
 static struct panel_list supp_panels[] = {
 	{"AUO", ARA_LCD_AUO},
-	{"BOE", AQU_LCD_BOE},
-	{"TM",  TITAN_LCD_TM},
-	{"BOE", TITAN_LCD_BOE},
+	{"AUO2", ARA_LCD_AUO_2},
 };
 char g_reg_buffer[256];
 
@@ -84,7 +87,9 @@ static void asus_lcd_delay_work_func(struct work_struct *);
 static DECLARE_DELAYED_WORK(asus_lcd_delay_work, asus_lcd_delay_work_func);
 static struct workqueue_struct *asus_lcd_delay_workqueue;
 static u32 asus_lcd_read_chip_unique_id(void);
-u32 asus_lcd_read_hw_id(void);
+void asus_lcd_read_hw_id(void);
+bool asus_lcd_is_shipping(void);
+bool asus_lcd_is_second_source(void);
 
 static DEFINE_SPINLOCK(asus_lcd_bklt_spinlock);
 static bool g_timer = false;
@@ -103,6 +108,10 @@ extern int asus_rmi4_suspend(void);
 extern int asus_rmi4_resume(void);
 extern int fts_ts_resume(void);
 //nancy---
+
+// for Ara second source panel wled fs current
+#define ARA_AUO_PANEL2_WLED_FS_CURR_UA 22500
+extern int qpnp_wled_fs_curr_ua_set(unsigned int curr_ua);
 
 //Bernard, dynamic calibration backlight +++
 #define ASUS_LCD_CALI_BL_TITAN_DEFAULT 650
@@ -556,16 +565,7 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 	pr_debug("%s:[Display] Set %s brightness (Actual:%d) (Adjust:%d)\n",
 		__func__, supp_panels[g_asus_lcdID].name, tmp_level, level);
 
-	if (g_asus_lcdID == AQU_LCD_BOE) {
-		led_pwm1[1] = (unsigned char)level;
-		pr_debug("%s:[DISPLAY] BOE level(%x)\n", __func__, led_pwm1[1]);
-		memset(&cmdreq, 0, sizeof(cmdreq));
-		cmdreq.cmds = &backlight_cmd;
-		cmdreq.cmds_cnt = 1;
-		cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
-		cmdreq.rlen = 0;
-		cmdreq.cb = NULL;
-	} else if (g_asus_lcdID == ARA_LCD_AUO) {
+	if (g_asus_lcdID == ARA_LCD_AUO || g_asus_lcdID == ARA_LCD_AUO_2) {
 		led_pwm2[1] = (unsigned char) (level >> 2) & 0xFF; //10bit
 		led_pwm2[2] = (unsigned char) (level) & 0x03;
 		pr_debug("%s:[DISPLAY] AUO level(0x%x%x) (%d) \n",
@@ -577,11 +577,10 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 		cmdreq.rlen = 0;
 		cmdreq.cb = NULL;
 	} else {
-		led_pwm2[1] = (unsigned char) (level >> 2) & 0xFF; //10bit
-		led_pwm2[2] = (unsigned char) (level) & 0x03;
-		pr_debug("%s:[DISPLAY] TM level(%x) level(%x) \n", __func__, led_pwm2[1], led_pwm2[2]);
+		led_pwm1[1] = (unsigned char)level;
+		pr_debug("%s:[DISPLAY] TM level(%x)\n", __func__, led_pwm1[1]);
 		memset(&cmdreq, 0, sizeof(cmdreq));
-		cmdreq.cmds = &tbyte_backlight_cmd;
+		cmdreq.cmds = &backlight_cmd;
 		cmdreq.cmds_cnt = 1;
 		cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
 		cmdreq.rlen = 0;
@@ -1364,13 +1363,13 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	}
 
 	if (asus_lcd_cabc_mode[1] == 0x0) {
-		if (asus_lcd_hw_id != 0xA2)
+		if (!asus_lcd_is_shipping())
 			on_cmds = &ctrl->on_cmds_debug;
 		else
 			on_cmds = &ctrl->on_cmds;
 	} else {
 		pr_err("[Display] Panel on with CABC\n");
-		if (asus_lcd_hw_id != 0xA2)
+		if (!asus_lcd_is_shipping())
 			on_cmds = &ctrl->cabc_on_cmds_debug;
 		else
 			on_cmds = &ctrl->cabc_on_cmds;
@@ -1552,17 +1551,24 @@ static void asus_lcd_delay_work_func(struct work_struct *ws)
 {
 	if (g_previous_bl) {
 		if(g_mdss_first_boot) {
-			printk("first boot detected.");
+			printk("first boot detected.\n");
 			asus_lcd_read_chip_unique_id();
-			asus_lcd_hw_id = asus_lcd_read_hw_id();
-			pr_info("%s: asus_lcd_hw_id: 0x%02x", __func__, asus_lcd_hw_id);
+
 			if (g_ftm_mode) {
 				asus_tcon_cmd_set(asus_lcd_cabc_mode, ARRAY_SIZE(asus_lcd_cabc_mode));
 			}
 			g_mdss_first_boot--;
-			if (asus_lcd_hw_id != 0xA2)
-				pr_err("%s: [Display] non shipping panel", __func__);
-				//asus_tcon_cmd_set(asus_lcd_invert_mode, ARRAY_SIZE(asus_lcd_invert_mode));
+
+			/* read Ara AUO panel HW ID and save it */
+			asus_lcd_read_hw_id();
+			if (!asus_lcd_is_shipping()) /* 1st MP = 0xA2, 2nd MP = 0x02 */
+				pr_err("[Display] non shipping panel.\n");
+
+			if (asus_lcd_is_second_source()) {
+				g_asus_lcdID = ARA_LCD_AUO_2;
+				qpnp_wled_fs_curr_ua_set(ARA_AUO_PANEL2_WLED_FS_CURR_UA);
+			}
+
 		}
 		g_timer = false;
 		//asus_tcon_cmd_set(asus_lcd_cabc_mode, ARRAY_SIZE(asus_lcd_cabc_mode));
@@ -1602,9 +1608,6 @@ void asus_tcon_cmd_set(char *cmd, short len)
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct dsi_cmd_desc tcon_cmd = {
 			{DTYPE_DCS_WRITE1, 1, 0, 0, 0, len}, cmd};
-
-	if(g_asus_lcdID == AQU_LCD_BOE && len==2 && cmd[0]==0x55 && cmd[1]!=0x0)
-		cmd[1] = cmd[1] | 0x80;
 
 	if(len > 2)
 		tcon_cmd.dchdr.dtype = DTYPE_GEN_LWRITE;
@@ -3703,44 +3706,6 @@ error:
 	return -EINVAL;
 }
 
-//read cmd for BOE panel
-static char boe_id_cmd1[] = {0xB0, 0x04};
-static struct dsi_cmd_desc write_boe_id_cmd = {
-	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(boe_id_cmd1)},
-	boe_id_cmd1
-};
-
-static char boe_id_cmd2[] = {0xDA, 0x00};
-static struct dsi_cmd_desc read_boe_id_cmd1 = {
-	{DTYPE_DCS_READ, 1, 0, 1, 5, sizeof(boe_id_cmd2)},
-	boe_id_cmd2
-};
-
-static char boe_id_cmd3[] = {0xDB, 0x00};
-static struct dsi_cmd_desc read_boe_id_cmd2 = {
-	{DTYPE_DCS_READ, 1, 0, 1, 5, sizeof(boe_id_cmd3)},
-	boe_id_cmd3
-};
-
-static char boe_id_cmd4[] = {0xDC, 0x00};
-static struct dsi_cmd_desc read_boe_id_cmd3 = {
-	{DTYPE_DCS_READ, 1, 0, 1, 5, sizeof(boe_id_cmd4)},
-	boe_id_cmd4
-};
-
-//read cmd for TM panel
-static char tm_id_cmd1[] = {0xDB, 0x00};
-static struct dsi_cmd_desc read_tm_id_cmd1 = {
-	{DTYPE_DCS_READ, 1, 0, 1, 5, sizeof(tm_id_cmd1)},
-	tm_id_cmd1
-};
-
-static char tm_id_cmd2[] = {0xD2, 0x00};
-static struct dsi_cmd_desc read_tm_id_cmd2 = {
-	{DTYPE_DCS_READ, 1, 0, 1, 5, sizeof(tm_id_cmd2)},
-	tm_id_cmd2
-};
-
 //read cmd for AUO panel
 /* asus AUO panel page commands */
 static char auo_enable_page_1[] = {0x00, 0x00};/* DTYPE_DCS_LWRITE */
@@ -3821,41 +3786,9 @@ static u32 asus_lcd_read_chip_unique_id(void)
 	rbuffer = kmalloc(sizeof(ctrl_pdata->rx_buf.len), GFP_KERNEL);
 
 	switch (g_asus_lcdID) {
-	case TITAN_LCD_TM:
-		cmdreq.cmds = &read_tm_id_cmd1;
-		cmdreq.cmds_cnt = 1;
-		cmdreq.flags = CMD_REQ_RX | CMD_REQ_COMMIT;
-		cmdreq.rlen = 1;
-		cmdreq.rbuf = rbuffer;
-		cmdreq.cb = NULL;
-
-		mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-
-		pr_err("[Display] TM id1: 0x%x\n", *(cmdreq.rbuf));
-		panel_uniqueID[0] = *(cmdreq.rbuf);
-
-		memset(&cmdreq, 0, sizeof(cmdreq));
-
-		cmdreq.cmds = &read_tm_id_cmd2;
-		cmdreq.cmds_cnt = 1;
-		cmdreq.flags = CMD_REQ_RX | CMD_REQ_COMMIT;
-		cmdreq.rlen = 4;
-		cmdreq.rbuf = rbuffer;
-		cmdreq.cb = NULL;
-
-		mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-
-		pr_err("[Display] TM id2: 0x%x, 0x%x, 0x%x, 0x%x\n", *(cmdreq.rbuf), *(cmdreq.rbuf+1), *(cmdreq.rbuf+2), *(cmdreq.rbuf+3));
-		panel_uniqueID[1] = *(cmdreq.rbuf) ^ *(cmdreq.rbuf+3);
-		panel_uniqueID[2] = *(cmdreq.rbuf+1);
-		panel_uniqueID[3] = *(cmdreq.rbuf+2);
-
-		memset(&cmdreq, 0, sizeof(cmdreq));
-
-		sprintf(lcd_unique_id, "%02x%02x%02x%02x", panel_uniqueID[0], panel_uniqueID[1], panel_uniqueID[2], panel_uniqueID[3]);
-		break;
 
 	case ARA_LCD_AUO:
+	case ARA_LCD_AUO_2:
 		// first enable page 2 command
 		enable_auo_command_page(true);
 
@@ -3887,65 +3820,6 @@ static u32 asus_lcd_read_chip_unique_id(void)
 		sprintf(lcd_unique_id, "%02x%02x%02x%02x", panel_uniqueID[0], panel_uniqueID[1], panel_uniqueID[2], panel_uniqueID[3]);
 		break;
 
-	case TITAN_LCD_BOE:
-	case AQU_LCD_BOE:
-		cmdreq.cmds = &write_boe_id_cmd;
-		cmdreq.cmds_cnt = 1;
-		cmdreq.flags = CMD_CLK_CTRL | CMD_REQ_COMMIT;
-		cmdreq.rlen = 0;;
-		cmdreq.cb = NULL;
-
-		msleep(10);
-		mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-		msleep(10);
-
-		memset(&cmdreq, 0, sizeof(cmdreq));
-
-		cmdreq.cmds = &read_boe_id_cmd1;
-		cmdreq.cmds_cnt = 1;
-		cmdreq.flags = CMD_REQ_RX | CMD_REQ_COMMIT;
-		cmdreq.rlen = 1;
-		cmdreq.rbuf = rbuffer;
-		cmdreq.cb = NULL;
-
-		mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-
-		pr_err("[Display] BOE id1: 0x%x\n", *(cmdreq.rbuf));
-		panel_uniqueID[0] = *(cmdreq.rbuf);
-
-		memset(&cmdreq, 0, sizeof(cmdreq));
-
-		cmdreq.cmds = &read_boe_id_cmd2;
-		cmdreq.cmds_cnt = 1;
-		cmdreq.flags = CMD_REQ_RX | CMD_REQ_COMMIT;
-		cmdreq.rlen = 1;
-		cmdreq.rbuf = rbuffer;
-		cmdreq.cb = NULL;
-
-		mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-
-		pr_err("[Display] BOE id2: 0x%x\n", *(cmdreq.rbuf));
-		panel_uniqueID[1] = *(cmdreq.rbuf);
-
-		memset(&cmdreq, 0, sizeof(cmdreq));
-
-		cmdreq.cmds = &read_boe_id_cmd3;
-		cmdreq.cmds_cnt = 1;
-		cmdreq.flags = CMD_REQ_RX | CMD_REQ_COMMIT;
-		cmdreq.rlen = 1;
-		cmdreq.rbuf = rbuffer;
-		cmdreq.cb = NULL;
-
-		mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
-
-		pr_err("[Display] BOE id3: 0x%x\n", *(cmdreq.rbuf));
-		panel_uniqueID[2] = *(cmdreq.rbuf);
-
-		memset(&cmdreq, 0, sizeof(cmdreq));
-
-		sprintf(lcd_unique_id, "%02x%02x%02x", panel_uniqueID[0], panel_uniqueID[1], panel_uniqueID[2]);
-		break;
-
 	default:
 		pr_err("[Display] unknow lcd id(%d), skip reading unique ID\n", g_asus_lcdID);
 		break;
@@ -3957,8 +3831,7 @@ static u32 asus_lcd_read_chip_unique_id(void)
 	return 0;
 }
 
-
-u32 asus_lcd_read_hw_id(void)
+void asus_lcd_read_hw_id(void)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct dcs_cmd_req cmdreq;
@@ -4001,10 +3874,42 @@ u32 asus_lcd_read_hw_id(void)
 
 	mutex_unlock(&asus_lcd_tcon_cmd_mutex);
 	kfree(rbuffer);
-	pr_info("%s [Display] AUO HW ID: 0x%x, 0x%x, 0x%x\n", __func__,
+	pr_info("[Display] AUO HW ID: 0x%x, 0x%x, 0x%x\n",
 		*(panel_uniqueID), *(panel_uniqueID+1), *(panel_uniqueID+2));
 
-	return panel_uniqueID[2];
+	asus_lcd_hw_id_0xDA = panel_uniqueID[0];
+	asus_lcd_hw_id_0xDC = panel_uniqueID[2];
+}
+
+bool asus_lcd_is_shipping(void)
+{
+	bool ret = true;
+	if (asus_lcd_hw_id_0xDA == 0x61) {
+		if (asus_lcd_hw_id_0xDC == 0xA2) {
+			printk("[Display] This is 1st source panel: MP stage\n");
+			ret = true;
+		} else {
+			printk("[Display] This is 1st source panel: ER2/PR stage\n");
+			ret = false;
+		}
+	} else if (asus_lcd_hw_id_0xDA == 0x65) {
+		if (asus_lcd_hw_id_0xDC == 0x02) {
+			printk("[Display] This is 2nd source panel: MP stage\n");
+			ret = true;
+		} else {
+			printk("[Display] This is 2nd source panel: 1st Sample\n");
+			ret = false;
+		}
+	}
+	return ret;
+}
+
+bool asus_lcd_is_second_source(void)
+{
+	if (asus_lcd_hw_id_0xDA == 0x65)
+		return true;
+	else
+		return false;
 }
 
 //ASUS_BSP+++ read lcd unique id for factory
@@ -4123,7 +4028,7 @@ int mdss_dsi_panel_init(struct device_node *node,
 	proc_create(ASUS_LCD_PROC_DUMP_CALI_INFO, 0666, NULL, &asus_lcd_info_proc_ops);
 	asus_lcd_delay_workqueue = create_workqueue("display_wq");
 
-	if (g_asus_lcdID == TITAN_LCD_TM || g_asus_lcdID == ARA_LCD_AUO) {
+	if (g_asus_lcdID == ARA_LCD_AUO_2 || g_asus_lcdID == ARA_LCD_AUO) {
 		g_bl_threshold = LCD_BL_THRESHOLD_TM;
 		g_wled_dimming_div = 10;
 		printk("%s:: TM g_bl_threshold(%d) g_wled_dimming_div(%d)\n", __func__, g_bl_threshold, g_wled_dimming_div);

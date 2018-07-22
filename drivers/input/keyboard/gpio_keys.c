@@ -352,7 +352,7 @@ unsigned int vol_down_press_count = 0;
 extern void set_dload_mode(int on);
 extern void msm_set_restart_mode(int mode);
 extern int download_mode;
-extern int g_QPST_property;
+extern void write_magic_number(void);
 
 static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 {
@@ -381,12 +381,11 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 				vol_down_press_count++;
 		}
 		if (vol_down_press_count == 10) {
-			if(g_QPST_property == 1) {
+				write_magic_number();
 				download_mode = 1;
 				set_dload_mode(download_mode);
 				msm_set_restart_mode(download_mode);
 				panic("special panic...\r\n");
-			}
 		}
 	}
 

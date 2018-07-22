@@ -883,6 +883,15 @@ void get_last_shutdown_log(void)
 }
 EXPORT_SYMBOL(get_last_shutdown_log);
 
+void write_magic_number(void)
+{
+	ulong *printk_buffer_slot2_addr;
+
+	printk_buffer_slot2_addr = (ulong *)PRINTK_BUFFER_SLOT2;
+	(*printk_buffer_slot2_addr) = (ulong)PRINTK_BUFFER_MAGIC;
+}
+EXPORT_SYMBOL(write_magic_number);
+
 extern int nSuspendInProgress;
 static struct workqueue_struct *ASUSEvtlog_workQueue;
 static int g_hfileEvtlog = -MAX_ERRNO;
@@ -1493,45 +1502,43 @@ static const struct file_operations proc_asusdebug_operations = {
 	.release	= asusdebug_release,
 };
 
-// ASUS_BSP +++ Jiunhau_Wang [ZE554KL][QPST][NA][NA] get QPST download status
-int g_QPST_property = 0;
-
-static ssize_t QPSTInfo_read(struct file *file, char __user *buf,
+// ASUS_BSP +++ Vivian_Tsai [ZE620KL][Debug][NA][NA] Add LogUnlock
+static ssize_t logunlock_read(struct file *file, char __user *buf,
 			      size_t count, loff_t *ppos)
 {
-	char print_buf[128];
-	unsigned int ret = 0, iret = 0;
-
-	sprintf(print_buf, "[QPST] getproperty persist.sys.downloadmode.enable = %d\n", g_QPST_property);
-	ret = strlen(print_buf);
-	iret = copy_to_user(buf, print_buf, ret);
-
 	return 0;
 }
 
-static ssize_t QPSTInfo_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
+static ssize_t logunlock_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 {
-	u8 messages[256] = { 0 };
+	char messages[256];
+	int file_handle;
+	
+	memset(messages, 0, sizeof(char)*256);
 
 	if (count > 256)
 		count = 256;
 	if (copy_from_user(messages, buf, count))
 		return -EFAULT;
-	
-	if (strncmp(messages, "0", strlen("0")) == 0) {
-		g_QPST_property = 0;
-	} else if (strncmp(messages, "1", strlen("1")) == 0) {
-		g_QPST_property = 1;
+			
+	initKernelEnv();
+	file_handle = sys_open(ASUS_ASDF_BASE_DIR "LogUnlock.txt", O_CREAT | O_RDWR | O_SYNC, 0660);
+	if (!IS_ERR((const void *)(ulong)file_handle)) {
+		sys_write(file_handle, messages, strlen(messages));
+		sys_close(file_handle);
+	}else {
+		printk("[LogTool] logunlock write error: [%d]\n", file_handle);
 	}
-	printk("[QPST] setproperty persist.sys.downloadmode.enable = %d\n", g_QPST_property);
+	deinitKernelEnv();
+			
 	return count;
 }
 
-static const struct file_operations proc_QPSTInfo_operations = {
-	.read		= QPSTInfo_read,
-	.write		= QPSTInfo_write,
+static const struct file_operations proc_logunlock_operations = {
+	.read	= logunlock_read,
+	.write	= logunlock_write,
 };
-// ASUS_BSP --- Jiunhau_Wang [ZE554KL][QPST][NA][NA] get QPST download status
+// ASUS_BSP --- Vivian_Tsai [ZE620KL][Debug][NA][NA] Add LogUnlock
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void asusdebug_early_suspend(struct early_suspend *h)
@@ -1631,9 +1638,7 @@ static int __init proc_asusdebug_init(void)
 	proc_create("asusevtlog-switch", S_IRWXUGO, NULL, &proc_evtlogswitch_operations);
 	proc_create("asusdebug-switch", S_IRWXUGO, NULL, &turnon_asusdebug_proc_ops);
 	proc_create("last_logcat", S_IWUGO, NULL, &last_logcat_proc_ops); /* ASUS_BSP For upload crash log to DroBox issue */
-// ASUS_BSP +++ Jiunhau_Wang [ZE554KL][QPST][NA][NA] get QPST download status
-	proc_create("QPSTInfo", S_IRWXUGO, NULL, &proc_QPSTInfo_operations);
-// ASUS_BSP --- Jiunhau_Wang [ZE554KL][QPST][NA][NA] get QPST download status
+	proc_create("logunlock", S_IRWXUGO, NULL, &proc_logunlock_operations);
 
 	PRINTK_BUFFER_VA = ioremap(PRINTK_BUFFER_PA, PRINTK_BUFFER_SIZE);
 	mutex_init(&mA);

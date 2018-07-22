@@ -1095,7 +1095,7 @@ void wait_for_power_key_6s_work(struct work_struct *work)
 		power_key_6s_running = 1;
 		startime = slowlog_time;
 		timeout = startime + HZ * TIMEOUT_COUNT / 10;
-		for (i = 0, slow_ok = 0; i < TIMEOUT_COUNT && slow_ok == 0 &&
+		for (i = 0; i < TIMEOUT_COUNT &&
 		     time_before(jiffies, timeout); i++) {
 			if (is_holding_power_key())
 				msleep(100);

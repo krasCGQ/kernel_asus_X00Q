@@ -57,6 +57,7 @@ enum kobject_action {
 	KOBJ_MOVE,
 	KOBJ_ONLINE,
 	KOBJ_OFFLINE,
+	KOBJ_IO_ERROR,//ASUS_BSP: add for detect bad SD card
 	KOBJ_MAX
 };
 

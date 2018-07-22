@@ -50,6 +50,7 @@ static const char *kobject_actions[] = {
 	[KOBJ_MOVE] =		"move",
 	[KOBJ_ONLINE] =		"online",
 	[KOBJ_OFFLINE] =	"offline",
+	[KOBJ_IO_ERROR] =	"io_error", //ASUS_BSP: add for detect bad SD card
 };
 
 /**

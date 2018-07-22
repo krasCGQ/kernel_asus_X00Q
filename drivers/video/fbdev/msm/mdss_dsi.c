@@ -3040,12 +3040,6 @@ static struct device_node *mdss_dsi_find_panel_of_node(
 		if (strcmp("qcom,mdss_dsi_tm5p5_r63350_1080p_video", panel_name) == 0 ) {
 			g_asus_lcdID = ARA_LCD_AUO;
 			printk("[Display] LCD ID = ARA AUO\n");
-		} else if (strcmp("qcom,mdss_dsi_boe_td4300_1080p_video", panel_name) == 0 ) {
-			g_asus_lcdID = AQU_LCD_BOE;
-			printk("[Display] LCD ID = AQU BOE\n");
-		} else if (strcmp("qcom,mdss_dsi_titan_tm_1080p_video", panel_name) == 0 ) {
-			g_asus_lcdID = TITAN_LCD_TM;
-			printk("[Display] LCD ID = TITAN TM\n");
 		}
 		printk("[Display] g_asus_lcdID = %d\n" , g_asus_lcdID);
 

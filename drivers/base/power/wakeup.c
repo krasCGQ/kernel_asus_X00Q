@@ -369,12 +369,15 @@ void device_wakeup_arm_wake_irqs(void)
 	struct wakeup_source *ws;
 	int srcuidx;
 
+	printk("%s +++ srcu\n",__func__);
+
 	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->wakeirq)
 			dev_pm_arm_wake_irq(ws->wakeirq);
 	}
 	srcu_read_unlock(&wakeup_srcu, srcuidx);
+	printk("%s --- srcu\n",__func__);
 }
 
 /**
@@ -387,12 +390,15 @@ void device_wakeup_disarm_wake_irqs(void)
 	struct wakeup_source *ws;
 	int srcuidx;
 
+	printk("%s +++ srcu\n",__func__);
+
 	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->wakeirq)
 			dev_pm_disarm_wake_irq(ws->wakeirq);
 	}
 	srcu_read_unlock(&wakeup_srcu, srcuidx);
+	printk("%s --- srcu\n",__func__);
 }
 
 /**
@@ -850,6 +856,8 @@ void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 	bool active = false;
 	int srcuidx;
 
+	printk("%s +++ srcu\n",__func__);
+
 	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->active && len < max) {
@@ -872,6 +880,7 @@ void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 				last_active_ws->name);
 	}
 	srcu_read_unlock(&wakeup_srcu, srcuidx);
+	printk("%s --- srcu\n",__func__);
 }
 EXPORT_SYMBOL_GPL(pm_get_active_wakeup_sources);
 
@@ -880,6 +889,8 @@ void pm_print_active_wakeup_sources(void)
 	struct wakeup_source *ws;
 	int srcuidx, active = 0;
 	struct wakeup_source *last_activity_ws = NULL;
+
+	printk("%s +++ srcu\n",__func__);
 
 	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
@@ -898,6 +909,7 @@ void pm_print_active_wakeup_sources(void)
 		printk("[PM] last active wakeup source: %s\n",
 			last_activity_ws->name);
 	srcu_read_unlock(&wakeup_srcu, srcuidx);
+	printk("%s --- srcu\n",__func__);
 }
 EXPORT_SYMBOL_GPL(pm_print_active_wakeup_sources);
 
@@ -1038,6 +1050,8 @@ void pm_wakep_autosleep_enabled(bool set)
 	ktime_t now = ktime_get();
 	int srcuidx;
 
+	printk("%s +++ srcu\n",__func__);
+
 	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		spin_lock_irq(&ws->lock);
@@ -1053,6 +1067,7 @@ void pm_wakep_autosleep_enabled(bool set)
 		spin_unlock_irq(&ws->lock);
 	}
 	srcu_read_unlock(&wakeup_srcu, srcuidx);
+	printk("%s --- srcu\n",__func__);
 }
 #endif /* CONFIG_PM_AUTOSLEEP */
 
@@ -1119,10 +1134,14 @@ static int wakeup_sources_stats_show(struct seq_file *m, void *unused)
 		"expire_count\tactive_since\ttotal_time\tmax_time\t"
 		"last_change\tprevent_suspend_time\n");
 
+	printk("%s +++ srcu\n",__func__);
+
 	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry)
 		print_wakeup_source_stats(m, ws);
 	srcu_read_unlock(&wakeup_srcu, srcuidx);
+
+	printk("%s --- srcu\n",__func__);
 
 	print_wakeup_source_stats(m, &deleted_ws);
 
@@ -1139,6 +1158,8 @@ void print_active_locks(void)
 	struct wakeup_source *ws;
 	int wl_active_cnt = 0;	//wakelock_active_cnt
 	int srcuidx;
+
+	printk("%s +++ srcu\n",__func__);
 
 	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry)
@@ -1161,6 +1182,7 @@ void print_active_locks(void)
 	}
 
 	srcu_read_unlock(&wakeup_srcu, srcuidx);
+	printk("%s --- srcu\n",__func__);
 	return;
 }
 EXPORT_SYMBOL(print_active_locks);

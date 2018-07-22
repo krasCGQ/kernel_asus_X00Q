@@ -799,7 +799,7 @@ static int FRGB_suspend_turn_off(bool bOn)
 static void FRGB_polling_raw(struct work_struct *work)
 {
 	int red = 0, green = 0, blue = 0, ir = 0;
-	int data[4]={0};
+	int data[4]={0,0,0,0};
 	int frgb_log_threshold = 0;
 	static int count = 0;
 
@@ -1636,7 +1636,7 @@ bool mFRGB_show_switch_onoff(void)
 
 int mFRGB_store_switch_onoff(bool bOn)
 {
-	int data[4] = {-1};
+	int data[4] = {-1,-1,-1,-1};
 	static int double_open = 0;
 
 	mutex_lock(&g_alsps_frgb_lock);
@@ -2794,6 +2794,8 @@ static ALSPS_FRGB_I2C mALSPS_FRGB_I2C = {
 static int __init ALSPS_FRGB_init(void)
 {
 	int ret = 0;
+	int data[4] = {-1,-1,-1,-1};
+	
 	log("Driver INIT +++\n");
 
 	/*Record the error message*/
@@ -2878,6 +2880,11 @@ static int __init ALSPS_FRGB_init(void)
 	/*To avoid LUX can NOT report when reboot in LUX=0*/
 	lsensor_report_lux(-1);
 	psensor_report_abs(-1);
+	g_red_last_raw = -1;
+	g_green_last_raw = -1;
+	g_blue_last_raw = -1;
+	g_ir_last_raw = -1;
+	FRGBsensor_report_raw(data, sizeof(data));
 	
 	log("Driver INIT ---\n");
 	return 0;

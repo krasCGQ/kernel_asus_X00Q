@@ -19,9 +19,7 @@
 //ASUS_BSP: +++
 enum {
 	ARA_LCD_AUO = 0,
-	AQU_LCD_BOE,
-	TITAN_LCD_TM,
-	TITAN_LCD_BOE,
+	ARA_LCD_AUO_2
 };
 extern int g_asus_lcdID;
 //ASUS_BSP: ---
@@ -639,6 +637,8 @@ do {									\
  * let gcc optimize the rest.
  */
 
+#define trace_printk(fmt, ...)
+#if 0
 #define trace_printk(fmt, ...)				\
 do {							\
 	char _______STR[] = __stringify((__VA_ARGS__));	\
@@ -647,6 +647,7 @@ do {							\
 	else						\
 		trace_puts(fmt);			\
 } while (0)
+#endif
 
 #define do_trace_printk(fmt, args...)					\
 do {									\
