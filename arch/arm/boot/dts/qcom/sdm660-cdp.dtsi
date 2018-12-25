@@ -271,7 +271,8 @@
 		compatible = "qcom,msm-ssc-sensors";
 	};
 };
-
+/* bsp remove this setting
 &pm660_charger {
 	qcom,batteryless-platform;
 };
+*/

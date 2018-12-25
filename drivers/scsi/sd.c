@@ -2889,6 +2889,12 @@ static int sd_revalidate_disk(struct gendisk *disk)
 		sd_read_cache_type(sdkp, buffer);
 		sd_read_app_tag_own(sdkp, buffer);
 		sd_read_write_same(sdkp, buffer);
+		/*
+		  *  Some card readers or usb storages can't be attached because it's too fast to dea with flush
+		  *  request after get cache related information.
+		  *  Add delay time to increase compatibility.
+		  */
+		msleep(100);
 	}
 
 	/*

@@ -49,6 +49,8 @@
 #include <linux/cpuset.h>
 #include <linux/vmpressure.h>
 #include <linux/zcache.h>
+#include <linux/slab.h>
+#include <linux/kmod.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/almk.h>
@@ -61,6 +63,11 @@
 
 #define CREATE_TRACE_POINTS
 #include "trace/lowmemorykiller.h"
+static bool trigger_dumpsys_meminfo = false;
+static unsigned long trigger_dumpsys_meminfo_time;
+static struct work_struct __dumpmem_work;
+struct work_struct __dumpthread_work;
+static int dumppid;
 
 static uint32_t lowmem_debug_level = 1;
 static short lowmem_adj[6] = {
@@ -420,6 +427,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	int other_free;
 	int other_file;
 
+	dumppid = 0;
 	if (!mutex_trylock(&scan_mutex))
 		return 0;
 
@@ -489,6 +497,35 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			continue;
 
 		oom_score_adj = p->signal->oom_score_adj;
+
+		//if a process is occupying too much memory, dumpsys and show the smaps.
+		if( ((get_mm_rss(p->mm) * (long)PAGE_SIZE / 1048576) > 1000) && !trigger_dumpsys_meminfo){
+			trigger_dumpsys_meminfo = true;
+			dumppid = p->pid;
+			printk("lowmemorykiller: %6d  %8ldkB %8d %s\n",p->pid, get_mm_rss(p->mm) * (long)(PAGE_SIZE / 1024),oom_score_adj, p->comm);
+		}
+
+		/*
+		1001 : UNKNOWN_ADJ
+		906 : CACHED_APP_MAX_ADJ
+		900 : CACHED_APP_MIN_ADJ
+		800 : SERVICE_B_ADJ
+		700 : PREVIOUS_APP_ADJ
+		600 : HOME_APP_ADJ
+		500 : SERVICE_ADJ
+		400 : HEAVY_WEIGHT_APP_ADJ
+		300 : BACKUP_APP_ADJ
+		200 : PERCEPTIBLE_APP_ADJ
+		100 : VISIBLE_APP_ADJ
+		*/
+		if(strstr(p->comm,"launcher") != NULL && oom_score_adj < 700){
+			if (min_score_adj > 100) {
+				task_unlock(p);
+				//printk("lowmemorykiller: Don't kill launcher when min_socre_adj > 100\n");
+				continue;
+			}
+		}
+
 		if (oom_score_adj < min_score_adj) {
 			task_unlock(p);
 			continue;
@@ -523,6 +560,9 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			return 0;
 		}
 
+		if (selected_oom_score_adj < 100 && !trigger_dumpsys_meminfo) {
+			trigger_dumpsys_meminfo = true;
+		}
 		task_lock(selected);
 		send_sig(SIGKILL, selected, 0);
 		/*
@@ -564,7 +604,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			     (long)zcache_pages() * (long)(PAGE_SIZE / 1024),
 			     sc->gfp_mask);
 
-		if (lowmem_debug_level >= 2 && selected_oom_score_adj == 0) {
+		if (selected_oom_score_adj == 0) {
 			show_mem(SHOW_MEM_FILTER_NODES);
 			dump_tasks(NULL, NULL);
 		}
@@ -582,6 +622,12 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		rcu_read_unlock();
 	}
 
+	if(trigger_dumpsys_meminfo && time_after(jiffies, trigger_dumpsys_meminfo_time)) {
+		trigger_dumpsys_meminfo = false;
+		trigger_dumpsys_meminfo_time = jiffies + 60 * HZ;
+		printk("[Vincent] start to schedule __keysavelog_work\n");
+		schedule_work(&__dumpmem_work);
+	}
 	lowmem_print(4, "lowmem_scan %lu, %x, return %lu\n",
 		     sc->nr_to_scan, sc->gfp_mask, rem);
 	mutex_unlock(&scan_mutex);
@@ -595,10 +641,39 @@ static struct shrinker lowmem_shrinker = {
 	.flags = SHRINKER_LMK
 };
 
+void dumpmem_func(struct work_struct *work)
+{
+	int ret = -1;
+	char buffer[8];
+	char cmdpath[] = "/system/bin/recvkernelevt";
+	char *argv[8] = {cmdpath, "dumpmem",NULL};
+	char *envp[] = {"HOME=/", "PATH=/sbin:/system/bin:/system/sbin:/vendor/bin", NULL};
+	snprintf (buffer,7,"%d",dumppid);
+	argv[2] = buffer;
+	argv[3] = NULL;
+	printk("[Debug+++] dumpsys meminfo on userspace\n");
+	ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+	printk("[Debug---] dumpsys meminfo on userspace, ret = %d\n", ret);
+	return;
+}
+void dumpthread_func(struct work_struct *work)
+{
+	int ret = -1;
+	char cmdpath[] = "/system/bin/recvkernelevt";
+	char *argv[8] = {cmdpath, "dumpbusythread",NULL};
+	char *envp[] = {"HOME=/", "PATH=/sbin:/system/bin:/system/sbin:/vendor/bin", NULL};
+	printk("[Debug+++] dumpthread  on userspace\n");
+	ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+	printk("[Debug---] dumpthread  on userspace, ret = %d\n", ret);
+
+	return;
+}
 static int __init lowmem_init(void)
 {
 	register_shrinker(&lowmem_shrinker);
 	vmpressure_notifier_register(&lmk_vmpr_nb);
+	INIT_WORK(&__dumpmem_work, dumpmem_func);
+	INIT_WORK(&__dumpthread_work, dumpthread_func);
 	return 0;
 }
 device_initcall(lowmem_init);

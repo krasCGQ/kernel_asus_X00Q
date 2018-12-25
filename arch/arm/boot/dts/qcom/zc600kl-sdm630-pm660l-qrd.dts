@@ -1,0 +1,73 @@
+/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+
+/dts-v1/;
+
+/*modified from android N sdm630-pm660l-qrd-wt89199.dts */
+
+#include "zc600kl-sdm630.dtsi"
+#include "zc600kl-sdm630-qrd.dtsi"
+#include "zc600kl-sdm660-internal-codec.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. SDM 630 PM660 + PM660L QRD";
+	compatible = "qcom,sdm630-qrd", "qcom,sdm630", "qcom,qrd";
+	qcom,board-id = <0x0001000b 0x00>;
+	qcom,pmic-id = <0x0001001b 0x0101011a 0x0 0x0>,
+			<0x0001001b 0x0201011a 0x0 0x0>;
+};
+
+&int_codec {
+	qcom,model = "sdm660-snd-card";
+	/delete-property/ qcom,us-euro-gpios;
+        qcom,wsa-disable;
+        qcom,msm-analog-switch=<&msm_analog_switch>;
+        qcom,msm-analog-switch-en=<&msm_analog_switch_en>;
+        qcom,msm-mbhc-hphl-swh = <1>;
+        qcom,msm-mbhc-gnd-swh = <0>;
+	qcom,audio-routing =
+		"RX_BIAS", "INT_MCLK0",
+		"SPK_RX_BIAS", "INT_MCLK0",
+		"INT_LDO_H", "INT_MCLK0",
+                "MIC BIAS External", "Handset Mic",
+		"MIC BIAS External2", "Headset Mic",
+		"MIC BIAS External", "Secondary Mic",
+		"AMIC1","MIC BIAS External",
+		"AMIC2", "MIC BIAS External2",
+		"AMIC3","MIC BIAS External",
+                "MIC BIAS External", "Digital Mic1",
+		"DMIC1", "MIC BIAS External",
+		"MIC BIAS External", "Digital Mic3",
+		"DMIC3", "MIC BIAS External",
+		"MIC BIAS External", "Digital Mic4",
+		"DMIC4", "MIC BIAS External",
+		"SpkrLeft IN", "SPK1 OUT",
+		"PDM_IN_RX1", "PDM_OUT_RX1",
+		"PDM_IN_RX2", "PDM_OUT_RX2",
+		"PDM_IN_RX3", "PDM_OUT_RX3",
+		"ADC1_IN", "ADC1_OUT",
+		"ADC2_IN", "ADC2_OUT",
+		"ADC3_IN", "ADC3_OUT";
+};
+
+
+
+
+
+
+
+
+
+
+
+

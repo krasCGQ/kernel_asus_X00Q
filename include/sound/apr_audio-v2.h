@@ -1919,6 +1919,31 @@ struct afe_port_cmd_set_param_v2 {
 	u8 param_data[0];
 } __packed;
 
+struct afe_port_param_data_v2 {
+	u32 module_id;
+/* ID of the module to be configured.
+ * Supported values: Valid module ID
+ */
+
+u32 param_id;
+/* ID of the parameter corresponding to the supported parameters
+ * for the module ID.
+ * Supported values: Valid parameter ID
+ */
+
+u16 param_size;
+/* Actual size of the data for the
+ * module_id/param_id pair. The size is a
+ * multiple of four bytes.
+ * Supported values: > 0
+ */
+
+u16 reserved;
+/* This field must be set to zero.
+ */
+} __packed;
+
+
 #define AFE_PORT_CMD_SET_PARAM_V3 0x000100FA
 struct afe_port_cmd_set_param_v3 {
 	/* APR Header */
@@ -4455,6 +4480,8 @@ struct afe_param_id_lpass_core_shared_clk_cfg {
 #define VPM_TX_DM_RFECNS_COPP_TOPOLOGY			0x00010F86
 #define ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX		0x10015002
 #define ADM_CMD_COPP_OPEN_TOPOLOGY_ID_AUDIOSPHERE	0x10028000
+#define ADM_CMD_COPP_OPEN_TOPOLOGY_ID_SPK 0x10038036
+#define ADM_CMD_COPP_OPEN_TOPOLOGY_ID_HP 0x00020314
 
 /* Memory map regions command payload used by the
  * #ASM_CMD_SHARED_MEM_MAP_REGIONS ,#ADM_CMD_SHARED_MEM_MAP_REGIONS
@@ -10626,7 +10653,7 @@ struct afe_clk_set {
 	 * for enable and disable clock.
 	 *	"clk_freq_in_hz", "clk_attri", and "clk_root"
 	 *	are ignored in disable clock case.
-	 *	@values 
+	 *	@valuesï¿½
 	 *	- 0 -- Disabled
 	 *	- 1 -- Enabled  @tablebulletend
 	 */

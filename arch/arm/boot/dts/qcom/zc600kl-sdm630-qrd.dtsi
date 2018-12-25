@@ -1,0 +1,730 @@
+/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include "zc600kl-msm-pm660l.dtsi"
+#include "zc600kl-sdm660-pinctrl.dtsi"
+#include "zc600kl-sdm630-camera-sensor-qrd.dtsi"
+
+&i2c_2 {
+	status = "okay";
+	smb138x: qcom,smb138x@8 {
+		compatible = "qcom,i2c-pmic";
+		reg = <0x8>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <21 IRQ_TYPE_LEVEL_LOW>;
+		interrupt_names = "smb138x";
+		interrupt-controller;
+		#interrupt-cells = <3>;
+		qcom,periph-map = <0x10 0x11 0x12 0x13 0x14 0x16 0x36>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&smb_int_default>;
+
+		smb138x_revid: qcom,revid@100 {
+			compatible = "qcom,qpnp-revid";
+			reg = <0x100 0x100>;
+		};
+
+		smb138x_tadc: qcom,tadc@3600 {
+			compatible = "qcom,tadc";
+			reg = <0x3600 0x100>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			#io-channel-cells = <1>;
+			interrupt-parent = <&smb138x>;
+			interrupts = <0x36 0x0 IRQ_TYPE_EDGE_BOTH>;
+			interrupt-names = "eoc";
+
+			batt_temp@0 {
+				reg = <0>;
+				qcom,rbias = <68100>;
+				qcom,rtherm-at-25degc = <68000>;
+				qcom,beta-coefficient = <3450>;
+			};
+
+			skin_temp@1 {
+				reg = <1>;
+				qcom,rbias = <33000>;
+				qcom,rtherm-at-25degc = <68000>;
+				qcom,beta-coefficient = <3450>;
+			};
+
+			die_temp@2 {
+				reg = <2>;
+				qcom,scale = <(-1306)>;
+				qcom,offset = <397904>;
+			};
+
+			batt_i@3 {
+				reg = <3>;
+				qcom,channel = <3>;
+				qcom,scale = <(-20000000)>;
+			};
+
+			batt_v@4 {
+				reg = <4>;
+				qcom,scale = <5000000>;
+			};
+
+			input_i@5 {
+				reg = <5>;
+				qcom,scale = <14285714>;
+			};
+
+			input_v@6 {
+				reg = <6>;
+				qcom,scale = <25000000>;
+			};
+
+			otg_i@7 {
+				reg = <7>;
+				qcom,scale = <5714286>;
+			};
+		};
+
+		smb1381_charger: qcom,smb1381-charger@1000 {
+			compatible = "qcom,smb138x-parallel-slave";
+			qcom,pmic-revid = <&smb138x_revid>;
+			reg = <0x1000 0x700>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			interrupt-parent = <&smb138x>;
+			io-channels =
+				<&smb138x_tadc 1>,
+				<&smb138x_tadc 2>,
+				<&smb138x_tadc 3>,
+				<&smb138x_tadc 14>,
+				<&smb138x_tadc 15>,
+				<&smb138x_tadc 16>,
+				<&smb138x_tadc 17>;
+			io-channel-names =
+				"connector_temp",
+				"charger_temp",
+				"batt_i",
+				"connector_temp_thr1",
+				"connector_temp_thr2",
+				"connector_temp_thr3",
+				"charger_temp_max";
+
+			qcom,chgr@1000 {
+				reg = <0x1000 0x100>;
+				interrupts = <0x10 0x1 IRQ_TYPE_EDGE_RISING>;
+				interrupt-names = "chg-state-change";
+			};
+
+			qcom,chgr-misc@1600 {
+				reg = <0x1600 0x100>;
+				interrupts = <0x16 0x1 IRQ_TYPE_EDGE_RISING>,
+					     <0x16 0x6 IRQ_TYPE_EDGE_RISING>;
+				interrupt-names = "wdog-bark",
+						  "temperature-change";
+			};
+		};
+	};
+};
+
+&tlmm {
+	smb_int_default: smb_int_default {
+		mux {
+			pins = "gpio21";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio21";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+
+		/* +Bug305851, zk-zhouying.wt, MODIFY, 2017-10-10, add usb temp alarm */
+		usbchg_temp_alarm_on: usbchg_temp_alarm_on {
+			mux {
+				pins = "gpio77";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio77";
+				bias-pull-up;
+				drive-strength = <2>;
+				input-enable;
+			};
+		};
+
+		usbchg_temp_disabled: usbchg_temp_disabled {
+			mux {
+				pins = "gpio13";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio13";
+				drive-strength = <2>;
+				output-high;
+			};
+		};
+		/* -Bug305851, zk-zhouying.wt, MODIFY, 2017-10-10, add usb temp alarm */
+
+};
+
+/ {
+	qrd_batterydata: qcom,battery-data {
+		qcom,batt-id-range-pct = <15>;
+
+		#include "fg-gen3-batterydata-qrd-skuk-4v4-3000mah.dtsi"
+	};
+};
+
+&pm660_fg {
+	qcom,battery-data = <&qrd_batterydata>;
+	qcom,fg-jeita-thresholds = <0 5 55 55>;
+	qcom,battery-thermal-coefficients = [9d 50 ff];
+};
+
+&uartblsp1dm1 {
+	status = "ok";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart_console_active>;
+};
+
+&ufsphy1 {
+	vdda-phy-supply = <&pm660l_l1>;
+	vdda-pll-supply = <&pm660_l10>;
+	vddp-ref-clk-supply = <&pm660_l1>;
+	vdda-phy-max-microamp = <51400>;
+	vdda-pll-max-microamp = <14200>;
+	vddp-ref-clk-max-microamp = <100>;
+	vddp-ref-clk-always-on;
+	status = "ok";
+};
+
+&ufs1 {
+	vdd-hba-supply = <&gdsc_ufs>;
+	vdd-hba-fixed-regulator;
+	vcc-supply = <&pm660l_l4>;
+	vccq2-supply = <&pm660_l8>;
+	vcc-max-microamp = <500000>;
+	vccq2-max-microamp = <600000>;
+	status = "ok";
+};
+
+&sdhc_1 {
+	/* device core power supply */
+	vdd-supply = <&pm660l_l4>;
+	qcom,vdd-voltage-level = <2950000 2950000>;
+	qcom,vdd-current-level = <200 570000>;
+
+	/* device communication power supply */
+	vdd-io-supply = <&pm660_l8>;
+	qcom,vdd-io-always-on;
+	qcom,vdd-io-lpm-sup;
+	qcom,vdd-io-voltage-level = <1800000 1800000>;
+	qcom,vdd-io-current-level = <200 325000>;
+
+	pinctrl-names = "active", "sleep";
+	pinctrl-0 = <&sdc1_clk_on &sdc1_cmd_on &sdc1_data_on &sdc1_rclk_on>;
+	pinctrl-1 = <&sdc1_clk_off &sdc1_cmd_off &sdc1_data_off &sdc1_rclk_off>;
+
+	qcom,clk-rates = <400000 20000000 25000000 50000000 100000000 192000000
+								384000000>;
+
+	qcom,nonremovable;
+	qcom,bus-speed-mode = "HS400_1p8v", "HS200_1p8v", "DDR_1p8v";
+
+	status = "ok";
+};
+
+&sdc2_cd_on {
+	config {
+		/delete-property/ bias-pull-up;
+		bias-disable;
+	};
+};
+
+&sdhc_2 {
+	/* device core power supply */
+	vdd-supply = <&pm660l_l5>;
+	qcom,vdd-voltage-level = <2950000 2950000>;
+	qcom,vdd-current-level = <15000 800000>;
+
+	/* device communication power supply */
+	vdd-io-supply = <&pm660l_l2>;
+	qcom,vdd-io-voltage-level = <1800000 2950000>;
+	qcom,vdd-io-current-level = <200 22000>;
+
+	pinctrl-names = "active", "sleep";
+	pinctrl-0 = <&sdc2_clk_on &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
+	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off &sdc2_cd_off>;
+
+	#address-cells = <0>;
+	interrupt-parent = <&sdhc_2>;
+	interrupts = <0 1 2>;
+	#interrupt-cells = <1>;
+	interrupt-map-mask = <0xffffffff>;
+	interrupt-map = <0 &intc 0 0 125 0
+			1 &intc 0 0 221 0
+			2 &tlmm 54 0>;
+	interrupt-names = "hc_irq", "pwr_irq", "status_irq";
+	cd-gpios = <&tlmm 54 0x0>;
+
+	qcom,clk-rates = <400000 20000000 25000000 50000000 100000000
+								200000000>;
+	qcom,bus-speed-mode = "SDR12", "SDR25", "SDR50", "DDR50", "SDR104";
+
+	status = "ok";
+};
+
+&mdss_mdp {
+	qcom,mdss-pref-prim-intf = "dsi";
+};
+
+&mdss_dsi {
+	hw-config = "single_dsi";
+};
+
+&mdss_dsi0 {
+	qcom,dsi-pref-prim-pan = <&dsi_nt35695b_truly_fhd_video>;
+	pinctrl-names = "mdss_default", "mdss_sleep";
+	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
+	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
+	qcom,platform-reset-gpio = <&tlmm 53 0>;
+	qcom,platform-te-gpio = <&tlmm 59 0>;
+};
+
+&mdss_dp_ctrl {
+	pinctrl-names = "mdss_dp_active", "mdss_dp_sleep";
+	pinctrl-0 = <&mdss_dp_aux_active &mdss_dp_usbplug_cc_active>;
+	pinctrl-1 = <&mdss_dp_aux_suspend &mdss_dp_usbplug_cc_suspend>;
+	qcom,aux-en-gpio = <&tlmm 55 0>;
+	qcom,aux-sel-gpio = <&tlmm 56 0>;
+	qcom,usbplug-cc-gpio = <&tlmm 58 0>;
+};
+
+&pm660l_gpios {
+	/* GPIO 7 for VOL_UP */
+	gpio@c600 {
+		status = "ok";
+		qcom,mode = <0>;
+		qcom,pull = <0>;
+		qcom,vin-sel = <0>;
+		qcom,src-sel = <0>;
+		qcom,out-strength = <1>;
+	};
+
+    /* GPIO 5 for Fingerprint */
+    gpio@c400 {
+        reg = <0xc400 0x100>;
+        qcom,pin-num = <5>;
+        status = "ok";
+    };
+};
+
+&pm660_gpios {
+	/* GPIO 11 for home key */
+	gpio@ca00 {
+		status = "ok";
+		qcom,mode = <0>;
+		qcom,pull = <0>;
+		qcom,vin-sel = <0>;
+		qcom,src-sel = <0>;
+		qcom,out-strength = <1>;
+	};
+
+	/* GPIO 4 (NFC_CLK_REQ) */
+	gpio@c300 {
+		qcom,mode = <0>;
+		qcom,vin-sel = <1>;
+		qcom,src-sel = <0>;
+		qcom,master-en = <1>;
+		status = "okay";
+	};
+};
+
+&i2c_7 {
+	status = "okay";
+	/* for AW87319 sound Speaker PA */
+	aw87319@58{
+	compatible = "awinic,aw87319_pa";
+		reg = <0x58>;
+		awinic,ext_pa_spk_aw87319_rst = <&tlmm 56 0x01>;
+	};
+};
+
+&i2c_4{
+    status = "okay";
+
+    synaptics_dsx@70 {
+		compatible = "synaptics,dsx-i2c";
+		reg = <0x70>;
+		//interrupt-parent = <&msm_gpio>;
+		//interrupts = <64 0x2008>;
+		//vdd-supply = <&pm660l_l3>;
+                vcc_i2c-supply = <&pm660_l11>;
+		//pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
+		//pinctrl-0 = <&ts_active>;
+		//pinctrl-1 = <&ts_suspend>;
+
+		synaptics,bus-reg-name = "vcc_i2c";
+                synaptics,power-reg-name = "vdd";
+		//synaptics,vdd-current =<20000>;
+                synaptics,vcc_i2c-current = <40000>;
+		//synaptics,ub-i2c-addr = <0x2c>;
+		synaptics,irq-gpio = <&tlmm 67 0x2008>; /* IRQF_ONESHOT | IRQF_TRIGGER_LOW */
+                synaptics,reset-gpio= <&tlmm 66 0x00>;
+		synaptics,irq-on-state = <0>;
+		synaptics,power-delay-ms = <200>;
+		synaptics,reset-delay-ms = <200>;
+		synaptics,reset-on-state = <0>;
+		synaptics,reset-active-ms = <20>;
+		/* uncomment and update line below as appropriate if there are 0D buttons */
+		/* synaptics,cap-button-codes = <102 158>; */
+		/* uncomment and update lines below as appropriate if there are virtual buttons */
+		/* synaptics,vir-button-codes = <102 100 900 100 60 158 300 900 100 60>; */
+		/* synaptics,max-y-for-2d = <800>; */
+	};
+
+    novatek@62 {
+		compatible = "novatek,NVT-ts";
+		reg = <0x62>;
+		status = "ok";
+
+		vdd-supply = <&pm660_l11>;    //VDDIO
+		avdd-supply = <&pm660l_l3>;    //VDD
+
+		novatek,reset-gpio = <&tlmm 66 0x00>;
+		novatek,irq-gpio = <&tlmm 67 0x2001>;
+
+
+		/* MP */
+		//novatek,mp-support-dt;
+
+		novatek-mp-criteria-nvtpid@0 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "novatek-mp-criteria-nvtpid";
+
+			/* MP Config */
+			IC_X_CFG_SIZE = <18>;
+			IC_Y_CFG_SIZE = <32>;
+			IC_KEY_CFG_SIZE = <4>;
+			X_Channel = <18>;
+			Y_Channel = <30>;
+			AIN_X = <17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0>;
+			AIN_Y = <0xFF 0xFF 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15
+								14 13 12 11 10 9 8 7 6 5 4 3 2 1 0>;
+			AIN_KEY = <0 1 2 0xFF>;
+
+			/* MP Criteria */
+			PS_Config_Lmt_Short_Rawdata_P = <20000>;
+			PS_Config_Lmt_Short_Rawdata_N = <11550>;
+			PS_Config_Lmt_Key_Short_Rawdata_P = <20000>;
+			PS_Config_Lmt_Key_Short_Rawdata_N = <11550>;
+			PS_Config_Lmt_Short_Diff_P = <6300>;
+			PS_Config_Lmt_Short_Diff_N = <0>;
+			PS_Config_Lmt_Key_Short_Diff_P = <6300>;
+			PS_Config_Lmt_Key_Short_Diff_N = <0>;
+			PS_Config_Lmt_Short_Base_P = <2000>;
+			PS_Config_Lmt_Short_Base_N = <(-2000)>;
+			PS_Config_Lmt_Key_Short_Base_P = <2000>;
+			PS_Config_Lmt_Key_Short_Base_N = <(-2000)>;
+
+			PS_Config_Lmt_Open_Rawdata_P = <
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000>;
+
+			PS_Config_Lmt_Open_Rawdata_N = <
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500>;
+
+			PS_Config_Lmt_FW_Rawdata_P = <
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000>;
+
+			PS_Config_Lmt_FW_Rawdata_N= <
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400>;
+
+			PS_Config_Lmt_FW_CC_P = <38>;
+			PS_Config_Lmt_FW_CC_N = <9>;
+			PS_Config_Lmt_Key_FW_CC_P = <38>;
+			PS_Config_Lmt_Key_FW_CC_N = <9>;
+
+			PS_Config_Lmt_FW_CC_I_P = <25>;
+			PS_Config_Lmt_FW_CC_I_N = <0>;
+			PS_Config_Lmt_FW_CC_Q_P = <25>;
+			PS_Config_Lmt_FW_CC_Q_N = <0>;
+			PS_Config_Lmt_Key_FW_CC_I_P = <25>;
+			PS_Config_Lmt_Key_FW_CC_I_N = <0>;
+			PS_Config_Lmt_Key_FW_CC_Q_P = <25>;
+			PS_Config_Lmt_Key_FW_CC_Q_N = <0>;
+
+			PS_Config_Lmt_FW_Diff_P = <35>;
+			PS_Config_Lmt_FW_Diff_N = <(-35)>;
+			PS_Config_Lmt_Key_FW_Diff_P = <35>;
+			PS_Config_Lmt_Key_FW_Diff_N = <(-35)>;
+
+			PS_Config_Diff_Test_Frame = <50>;
+		};
+	};
+};
+
+&i2c_6 { /* BLSP1 QUP6 (NFC) */
+	status = "okay";
+	nq@28 {
+		compatible = "qcom,nq-nci";
+		reg = <0x28>;
+		qcom,nq-irq = <&tlmm 28 0x00>;
+		qcom,nq-ven = <&tlmm 29 0x00>;
+		qcom,nq-firm = <&tlmm 30 0x00>;
+		qcom,nq-clkreq = <&pm660_gpios 4 0x00>;
+		qcom,nq-esepwr = <&tlmm 31 0x00>;
+		interrupt-parent = <&tlmm>;
+		qcom,clk-src = "BBCLK3";
+		interrupts = <28 0>;
+		interrupt-names = "nfc_irq";
+		pinctrl-names = "nfc_active", "nfc_suspend";
+		pinctrl-0 = <&nfc_int_active &nfc_enable_active>;
+		pinctrl-1 = <&nfc_int_suspend &nfc_enable_suspend>;
+		clocks = <&clock_rpmcc RPM_LN_BB_CLK3_PIN>;
+		clock-names = "ref_clk";
+	};
+};
+
+&tlmm {
+	pmx_ts_rst_active {
+		ts_rst_active: ts_rst_active {
+			mux {
+				pins = "gpio66";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio66";
+				drive-strength = <16>;
+				bias-pull-up;
+			};
+		};
+	};
+
+	pmx_ts_rst_suspend {
+		ts_rst_suspend: ts_rst_suspend {
+			mux {
+				pins = "gpio66";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio66";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+};
+
+&ssphy {
+	fpc-redrive-supply = <&pm660_l11>;
+	qcom,redrive-voltage-level = <0 1800000 1950000>;
+	qcom,redrive-load = <105000>;
+};
+
+&soc {
+	qcom,msm-ssc-sensors {
+		compatible = "qcom,msm-ssc-sensors";
+	};
+
+	// add for fingerprint
+	chipone_fp {
+		compatible = "qcom,fingerprint-gpio";
+		interrupt-parent = <&tlmm>;
+		interrupts = <72 0x1>;
+		fp-gpio-int = <&tlmm 72 0x00>;
+		fp-gpio-reset = <&tlmm 20 0x00>;
+		fp-gpio-power = <&pm660l_gpios 5 0x00>;
+		status = "okay";
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+		input-name = "gpio-keys";
+		status = "ok";
+
+		vol_up {
+			label = "volume_up";
+			gpios = <&pm660l_gpios 7 0x1>;
+			linux,input-type = <1>;
+			linux,code = <115>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+		};
+/*
+		home {
+			label = "home";
+			gpios = <&pm660_gpios 11 0x1>;
+			linux,input-type = <1>;
+			linux,code = <102>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+		};
+*/
+	};
+
+	hbtp {
+		compatible = "qcom,hbtp-input";
+		pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
+		pinctrl-0 = <&ts_rst_active>;
+		pinctrl-1 = <&ts_rst_suspend>;
+		vcc_ana-supply = <&pm660l_l3>;
+		vcc_dig-supply = <&pm660_l13>;
+		qcom,afe-load = <20000>;
+		qcom,afe-vtg-min = <3008000>;
+		qcom,afe-vtg-max = <3008000>;
+		qcom,dig-load = <40000>;
+		qcom,dig-vtg-min = <1808000>;
+		qcom,dig-vtg-max = <1808000>;
+		qcom,fb-resume-delay-us = <10000>;
+		qcom,afe-power-on-delay-us = <1000>;
+		qcom,afe-power-off-delay-us = <6>;
+	};
+};
+
+&qusb_phy0 {
+	qcom,qusb-phy-init-seq = <0xf8 0x80
+				0x83 0x84
+				0x83 0x88
+				0xc3 0x8c
+				0x30 0x08
+				0x79 0x0c
+				0x21 0x10
+				0x14 0x9c
+				0x9f 0x1c
+				0x00 0x18>;
+};

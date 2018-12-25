@@ -49,6 +49,7 @@
 #undef DS2_ADM_COPP_TOPOLOGY_ID
 #define DS2_ADM_COPP_TOPOLOGY_ID 0xFFFFFFFF
 #endif
+extern int audio_24bit;//Rice
 
 struct adm_copp {
 
@@ -2845,9 +2846,16 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	int copp_idx = -1;
 	int tmp_port = q6audio_get_port_id(port_id);
 
-	pr_debug("%s:port %#x path:%d rate:%d mode:%d perf_mode:%d,topo_id %d\n",
-		 __func__, port_id, path, rate, channel_mode, perf_mode,
-		 topology);
+	pr_debug("%s:port %#x path:%d rate:%d mode:%d perf_mode:%d,topo_id %d, bit_width %d\n",
+               __func__, port_id, path, rate, channel_mode, perf_mode,
+               topology,bit_width);
+
+        if ( audio_24bit && ((topology == ADM_CMD_COPP_OPEN_TOPOLOGY_ID_SPK && channel_mode == 2) ||
+                (topology == ADM_CMD_COPP_OPEN_TOPOLOGY_ID_HP && channel_mode == 2))) {
+                bit_width = 24;
+                pr_debug("%s: Force open adm in 24-bit for topology 0x%x\n",
+                        __func__, topology);
+        }
 
 	port_id = q6audio_convert_virtual_to_portid(port_id);
 	port_idx = adm_validate_and_get_port_index(port_id);

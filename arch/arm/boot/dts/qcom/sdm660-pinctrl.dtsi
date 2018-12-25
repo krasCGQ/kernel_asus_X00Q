@@ -854,6 +854,63 @@
 				};
 			};
 		};
+
+		analog_switch_gpio {
+			analog_switch_gpio_act: analog_switch_gpio_act {
+				mux {
+					pins = "gpio45";
+					function = "gpio";
+				};
+				config {
+					pins = "gpio45";
+					drive-strength = <8>;
+					bias-disable;
+					output-high;
+				};
+			};
+
+			analog_switch_gpio_sus: analog_switch_gpio_sus {
+				mux {
+					pins = "gpio45";
+					function = "gpio";
+				};
+				config {
+					pins = "gpio45";
+					drive-strength = <2>;
+					bias-pull-down;
+					output-low;
+				};
+			};
+		};
+
+		analog_switch_en_gpio {
+			analog_switch_en_gpio_act: analog_switch_en_gpio_act {
+				mux {
+					pins = "gpio21";
+					function = "gpio";
+				};
+				config {
+					pins = "gpio21";
+					drive-strength = <8>;
+					bias-disable;
+					output-high;
+				};
+			};
+
+			analog_switch_en_gpio_sus: analog_switch_en_gpio_sus {
+				mux {
+					pins = "gpio21";
+					function = "gpio";
+				};
+				config {
+					pins = "gpio21";
+					drive-strength = <2>;
+					bias-pull-down;
+					output-low;
+				};
+			};
+		};
+
 		/* USB C analog configuration */
 		wcd_usbc_analog_en1 {
 			wcd_usbc_analog_en1_idle: wcd_usbc_ana_en1_idle {

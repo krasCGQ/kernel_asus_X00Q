@@ -935,7 +935,9 @@ rndis_qc_bind(struct usb_configuration *c, struct usb_function *f)
 		rndis_qc_string_defs[2].id = status;
 		rndis_qc_iad_descriptor.iFunction = status;
 	}
-
+	// ASUS_BSP Peripheral devices (Sapito BRF71N) cannot recognize NDIS 6 descriptor settings
+	// Fall back to old settings.
+	rndis->use_wceis = true;
 	if (rndis->use_wceis) {
 		rndis_qc_iad_descriptor.bFunctionClass =
 				USB_CLASS_WIRELESS_CONTROLLER;

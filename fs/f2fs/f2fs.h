@@ -914,6 +914,10 @@ struct flush_cmd_control {
 	atomic_t issing_flush;			/* # of issing flushes */
 	struct llist_head issue_list;		/* list for command issue */
 	struct llist_node *dispatch_list;	/* list for command dispatch */
+#ifdef CONFIG_F2FS_ASYNC_FLUSH
+	atomic_t need_async_flush;
+	atomic_t thread_stopped;
+#endif
 };
 
 struct f2fs_sm_info {

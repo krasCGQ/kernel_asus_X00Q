@@ -1305,6 +1305,11 @@ static int32_t msm_cci_i2c_set_sync_prms(struct v4l2_subdev *sd,
 	return rc;
 }
 
+//darrency_lin ++
+struct mutex CCI_RefMutex;
+int my_cci_ref;
+//darrency_lin --
+
 static int32_t msm_cci_init(struct v4l2_subdev *sd,
 	struct msm_camera_cci_ctrl *c_ctrl)
 {
@@ -1313,6 +1318,11 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 	struct cci_device *cci_dev;
 	enum cci_i2c_master_t master = MASTER_0;
 	uint32_t *clk_rates  = NULL;
+
+//darrency_lin ++
+		mutex_lock(&CCI_RefMutex);
+		my_cci_ref++;
+//darrency_lin --
 
 	cci_dev = v4l2_get_subdevdata(sd);
 	if (!cci_dev || !c_ctrl) {
@@ -1334,7 +1344,7 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 		master = c_ctrl->cci_info->cci_i2c_master;
 		CDBG("%s:%d master %d\n", __func__, __LINE__, master);
 		if (master < MASTER_MAX && master >= 0) {
-			mutex_lock(&cci_dev->cci_master_info[master].mutex);
+			//mutex_lock(&cci_dev->cci_master_info[master].mutex); //ASUS_BSP PJ_Ma+++
 			mutex_lock(&cci_dev->cci_master_info[master].
 				mutex_q[PRIORITY_QUEUE]);
 			mutex_lock(&cci_dev->cci_master_info[master].
@@ -1367,8 +1377,11 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 				mutex_q[SYNC_QUEUE]);
 			mutex_unlock(&cci_dev->cci_master_info[master].
 				mutex_q[PRIORITY_QUEUE]);
-			mutex_unlock(&cci_dev->cci_master_info[master].mutex);
+			//mutex_unlock(&cci_dev->cci_master_info[master].mutex); //ASUS_BSP PJ_Ma+++
 		}
+		//darrency_lin ++
+		mutex_unlock(&CCI_RefMutex);
+		//darrency_lin ++
 		return 0;
 	}
 	ret = msm_cci_pinctrl_init(cci_dev);
@@ -1507,6 +1520,11 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 	}
 	cci_dev->cci_state = CCI_STATE_ENABLED;
 
+//darrency_lin ++
+	mutex_unlock(&CCI_RefMutex);
+	if (my_cci_ref<0 || my_cci_ref>3) pr_err("%s ref_count = %d, my_ref=%d --- do request gpio done\n", "randy i2c init", cci_dev->ref_count, my_cci_ref);
+//darrency_lin --
+
 	return 0;
 
 reset_complete_failed:
@@ -1531,6 +1549,13 @@ request_gpio_failed:
 	if (cam_config_ahb_clk(NULL, 0, CAM_AHB_CLIENT_CCI,
 		CAM_AHB_SUSPEND_VOTE) < 0)
 		pr_err("%s: failed to remove vote for AHB\n", __func__);
+
+	//darrency_lin ++
+	my_cci_ref--;
+	mutex_unlock(&CCI_RefMutex);
+	pr_err("%s ref_count = %d, my_ref=%d --- request gpio failed\n", "randy i2c init", cci_dev->ref_count, my_cci_ref);
+	//darrency_lin --
+	
 	return rc;
 }
 
@@ -1538,6 +1563,12 @@ static int32_t msm_cci_release(struct v4l2_subdev *sd)
 {
 	uint8_t i = 0, rc = 0;
 	struct cci_device *cci_dev;
+
+	//darrency_lin ++
+	if (my_cci_ref<=0 || my_cci_ref>3)	pr_err("%s , my_ref=%d +++\n", "randy i2c release", my_cci_ref);
+		mutex_lock(&CCI_RefMutex);
+		my_cci_ref--;
+	//darrency_lin --
 
 	cci_dev = v4l2_get_subdevdata(sd);
 	if (!cci_dev->ref_count || cci_dev->cci_state != CCI_STATE_ENABLED) {
@@ -1589,6 +1620,13 @@ ahb_vote_suspend:
 	if (cam_config_ahb_clk(NULL, 0, CAM_AHB_CLIENT_CCI,
 		CAM_AHB_SUSPEND_VOTE) < 0)
 		pr_err("%s: failed to remove vote for AHB\n", __func__);
+
+//darrency_lin ++
+	mutex_unlock(&CCI_RefMutex);
+if (my_cci_ref<0 || my_cci_ref>3)
+	pr_err("%s ref_count = %d, my_ref=%d ---\n", "randy i2c release fail", cci_dev->ref_count, my_cci_ref);
+//darrency_lin --
+
 	return rc;
 }
 
@@ -1663,6 +1701,22 @@ static int32_t msm_cci_config(struct v4l2_subdev *sd,
 	struct msm_camera_cci_ctrl *cci_ctrl)
 {
 	int32_t rc = 0;
+	//ASUS_BSP PJ_Ma+++
+	struct cci_device *cci_dev;
+	enum cci_i2c_master_t master = MASTER_0;
+	cci_dev = v4l2_get_subdevdata(sd);
+	if(cci_ctrl->cmd != MSM_CCI_RELEASE) {
+		if (!cci_dev || !cci_ctrl || !cci_ctrl->cci_info) {
+			pr_err("%s:%d failed: invalid params %pK %pK\n", __func__,
+				__LINE__, cci_dev, cci_ctrl);
+			rc = -EINVAL;
+			return rc;
+		}
+		master = cci_ctrl->cci_info->cci_i2c_master;
+		if (master < MASTER_MAX && master >= 0)
+			mutex_lock(&cci_dev->cci_master_info[master].mutex);
+	}
+	//ASUS_BSP PJ_Ma---
 	CDBG("%s line %d cmd %d\n", __func__, __LINE__,
 		cci_ctrl->cmd);
 	switch (cci_ctrl->cmd) {
@@ -1693,6 +1747,12 @@ static int32_t msm_cci_config(struct v4l2_subdev *sd,
 	}
 	CDBG("%s line %d rc %d\n", __func__, __LINE__, rc);
 	cci_ctrl->status = rc;
+	//ASUS_BSP PJ_Ma+++
+	if(cci_ctrl->cmd != MSM_CCI_RELEASE) {
+		if (master < MASTER_MAX && master >= 0)
+			mutex_unlock(&cci_dev->cci_master_info[master].mutex);
+	}
+	//ASUS_BSP PJ_Ma---
 	return rc;
 }
 
@@ -2106,6 +2166,12 @@ static int msm_cci_probe(struct platform_device *pdev)
 	}
 
 	new_cci_dev->ref_count = 0;
+
+//darrency_lin ++
+	my_cci_ref=0;
+	mutex_init(&CCI_RefMutex);
+//darrency_lin --
+	
 	new_cci_dev->base = msm_camera_get_reg_base(pdev, "cci", true);
 	if (!new_cci_dev->base) {
 		pr_err("%s: no mem resource?\n", __func__);

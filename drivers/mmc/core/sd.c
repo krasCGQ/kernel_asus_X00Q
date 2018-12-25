@@ -431,6 +431,8 @@ static void sd_update_bus_speed_mode(struct mmc_card *card)
 		return;
 	}
 
+	printk("[SD] card->host->caps 0x%x\n", card->host->caps);
+	printk("[SD] card->sw_caps.sd3_bus_mode 0x%x\n", card->sw_caps.sd3_bus_mode);
 	if ((card->host->caps & MMC_CAP_UHS_SDR104) &&
 	    (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR104) &&
 	    (card->host->f_max > UHS_SDR104_MIN_DTR)) {
@@ -455,6 +457,7 @@ static void sd_update_bus_speed_mode(struct mmc_card *card)
 		    SD_MODE_UHS_SDR12)) {
 		card->sd_bus_speed = UHS_SDR12_BUS_SPEED;
 	}
+	printk("[SD] card->sd_bus_speed %d\n", card->sd_bus_speed);
 }
 
 static int sd_set_bus_speed_mode(struct mmc_card *card, u8 *status)
@@ -659,6 +662,7 @@ static int mmc_sd_init_uhs_card(struct mmc_card *card)
 	int err;
 	u8 *status;
 
+	printk("[SD] mmc_sd_init_uhs_card\n");
 	if (!card->scr.sda_spec3)
 		return 0;
 
@@ -1009,6 +1013,7 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
 
+	printk("[SD] mmc_sd_init_card\n");
 	err = mmc_sd_get_cid(host, ocr, cid, &rocr);
 	if (err)
 		return err;
@@ -1084,6 +1089,7 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 		/*
 		 * Attempt to change to high-speed (if supported)
 		 */
+		printk("[SD] mmc_card_set_highspeed \n");
 		err = mmc_sd_switch_hs(card);
 		if (err > 0)
 			mmc_set_timing(card->host, MMC_TIMING_SD_HS);
@@ -1118,7 +1124,7 @@ free_card:
 		host->card = NULL;
 		mmc_remove_card(card);
 	}
-
+	printk("[SD] mmc_sd_init_card fail(%d)\n",err);
 	return err;
 }
 
@@ -1131,6 +1137,8 @@ static void mmc_sd_remove(struct mmc_host *host)
 	BUG_ON(!host->card);
 
 	mmc_exit_clk_scaling(host);
+	if (!strcmp(mmc_hostname(host),"mmc1"))
+		printk("[SD]mmc_sd_remove\n");
 	mmc_remove_card(host->card);
 
 	mmc_claim_host(host);
@@ -1183,6 +1191,8 @@ static void mmc_sd_detect(struct mmc_host *host)
 		mmc_card_clr_suspended(host->card);
 		goto out;
 	}
+
+	mmc_power_up(host, host->ocr_avail);
 
 	/*
 	 * Just check if our card has been removed.

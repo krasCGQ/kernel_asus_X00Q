@@ -245,8 +245,8 @@ struct msm_mdp_interface {
 				do_div(out, 2 * max_bright);\
 				} while (0)
 #define MDSS_BL_TO_BRIGHT(out, v, bl_max, max_bright) do {\
-				out = (2 * ((v) * (max_bright)) + (bl_max));\
-				do_div(out, 2 * bl_max);\
+				out = ((v) * (max_bright));\
+				do_div(out, bl_max);\
 				} while (0)
 
 struct mdss_fb_file_info {
@@ -286,6 +286,10 @@ struct msm_fb_data_type {
 	u32 idle_state;
 	struct msm_fb_fps_info fps_info;
 	struct delayed_work idle_notify_work;
+
+	struct delayed_work early_unblank_work;
+	bool early_unblank_work_queued;
+	int early_unblank_bl_value;
 
 	bool atomic_commit_pending;
 

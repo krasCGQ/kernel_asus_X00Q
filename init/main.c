@@ -129,12 +129,175 @@ static char *initcall_command_line;
 static char *execute_command;
 static char *ramdisk_execute_command;
 
+//+++ ASUS_BSP : Add for audio dbg mode
+int g_user_dbg_mode = 1;
+EXPORT_SYMBOL(g_user_dbg_mode);
+
+static int set_user_dbg_mode(char *str)
+{
+	if (strcmp("y", str) == 0)
+		g_user_dbg_mode = 1;
+	else
+		g_user_dbg_mode = 0;
+	g_user_dbg_mode = 1;
+	printk("Kernel dbg mode = %d\n", g_user_dbg_mode);
+	return 0;
+}
+__setup("dbg=", set_user_dbg_mode);
+
+int g_ftm_mode = 0;
+EXPORT_SYMBOL(g_ftm_mode);
+
+static int set_ftm_mode(char *str)
+{
+    if ( strcmp("1", str) == 0 )
+    {
+        g_ftm_mode = 1;
+    }
+    else
+    {
+        g_ftm_mode = 0;
+    }
+    printk("androidboot.pre-ftm= %d\n",  g_ftm_mode);
+    return 0;
+}
+__setup("androidboot.pre-ftm=", set_ftm_mode);
+//--- ASUS_BSP : Add for audio dbg mode
 /*
  * Used to generate warnings if static_key manipulation functions are used
  * before jump_label_init is called.
  */
 bool static_key_initialized __read_mostly;
 EXPORT_SYMBOL_GPL(static_key_initialized);
+
+// ASUS_BSP +++ get permissive status
+int permissive_enable = 0;
+EXPORT_SYMBOL(permissive_enable);
+static int get_permissive_status(char *str)
+{
+	
+	if( strcmp("permissive", str) == 0 )
+	{
+		permissive_enable = 1;
+		printk("permissive = %d\n", permissive_enable);
+	}
+
+	return 0;
+}
+__setup("androidboot.selinux=", get_permissive_status);
+// ASUS_BSP --- get permissive status
+
+//// ASUS BSP WEIYU: CHARGER +++
+
+//weiyu: charger mode +++
+bool g_Charger_mode = false;
+static int set_charger_mode(char *str)
+{
+    if ( strcmp("charger", str) == 0 )
+        g_Charger_mode = true;
+    else
+        g_Charger_mode = false;
+
+    printk("g_Charger_mode = %d\n", g_Charger_mode);
+    return 0;
+}
+__setup("androidboot.mode=", set_charger_mode);
+EXPORT_SYMBOL(g_Charger_mode);
+// charger mode ---
+
+//// ASUS BSP WEIYU: CHARGER ---
+
+enum DEVICE_HWID g_ASUS_hwID=ZE620KL_UNKNOWN;
+
+EXPORT_SYMBOL(g_ASUS_hwID);
+
+static int set_hardware_id(char *str)
+{
+	// ZE620KL
+	if ( strcmp("0", str) == 0 )
+	{
+		g_ASUS_hwID = ZE620KL_SR;
+		printk("Kernel HW ID = ZE620KL_SR\n");
+	}
+	else if ( strcmp("2", str) == 0 )
+	{
+		g_ASUS_hwID = ZE620KL_ER;
+		printk("Kernel HW ID = ZE620KL_ER\n");
+	}
+	else if ( strcmp("3", str) == 0 )
+	{
+		g_ASUS_hwID = ZE620KL_ER2;
+		printk("Kernel HW ID = ZE620KL_ER2\n");
+	}
+	else if ( strcmp("4", str) == 0 )
+	{
+		g_ASUS_hwID = ZE620KL_PR;
+		printk("Kernel HW ID = ZE620KL_PR\n");
+	}
+	else if ( strcmp("5", str) == 0 )
+	{
+		g_ASUS_hwID = ZE620KL_PR2;
+		printk("Kernel HW ID = ZE620KL_PR2\n");
+	}
+	else if ( strcmp("7", str) == 0 )
+	{
+		g_ASUS_hwID = ZE620KL_MP;
+		printk("Kernel HW ID = ZE620KL_MP\n");
+	}
+	else
+	{
+		g_ASUS_hwID = ZE620KL_UNKNOWN;
+		printk("Kernel HW ID = UNKNOWN\n");
+	}	
+	printk("g_Asus_hwID = %d\n", g_ASUS_hwID);
+
+	return 0;
+}
+ __setup("androidboot.id.stage=", set_hardware_id);
+//--- ASUS_BSP : miniporting
+
+//+++ ASUS_BSP : miniporting
+enum DEVICE_HWID g_ASUS_prjID=ZE620KL_UNKNOWN;
+
+EXPORT_SYMBOL(g_ASUS_prjID);
+
+ static int set_project_id(char *str)
+ {
+	// ZE620KL PRJECT
+	if ( strcmp("6", str) == 0 )
+	{
+		g_ASUS_prjID = ZE620KL_636_PRJ_ID;
+		printk("Kernel PRJ ID = ZE620KL_636\n");
+	}
+	else if ( strcmp("10", str) == 0 )
+	{
+		g_ASUS_prjID = ZC600KL_630_PRJ_ID;
+		printk("Kernel PRJ ID = ZC600KL_630\n");
+	}
+	else
+	{
+		g_ASUS_prjID = UNKNOWN_PRJ;
+		printk("Kernel PRJ ID = UNKNOWN\n");
+	}	
+
+	printk("g_ASUS_prjID = %d\n", g_ASUS_prjID);
+
+	return 0;
+
+}
+ __setup("androidboot.id.prj=", set_project_id);
+//--- ASUS_BSP : miniporting
+
+//+++ ASUS_BSP : set recovery cmdline
+bool g_recovery_mode = false;
+static int set_recovery_mode(char *str)
+{
+	g_recovery_mode = true;
+	printk("Recovery mode = %d\n",g_recovery_mode);
+	return 0;
+}
+__setup("recovery", set_recovery_mode);
+//---ASUS_BSP : set recovery cmdline
 
 /*
  * If set, this is an indication to the drivers that reset the underlying
@@ -765,14 +928,22 @@ static int __init_or_module do_one_initcall_debug(initcall_t fn)
 	unsigned long long duration;
 	int ret;
 
+	if (initcall_debug)
 	printk(KERN_DEBUG "calling  %pF @ %i\n", fn, task_pid_nr(current));
 	calltime = ktime_get();
 	ret = fn();
 	rettime = ktime_get();
 	delta = ktime_sub(rettime, calltime);
 	duration = (unsigned long long) ktime_to_ns(delta) >> 10;
+	if (initcall_debug)
 	printk(KERN_DEBUG "initcall %pF returned %d after %lld usecs\n",
 		 fn, ret, duration);
+
+	if (initcall_debug == 0) {
+		if (duration > 100000)
+			printk(KERN_WARNING "[debuginit] initcall %pF returned %d after %lld usecs\n", fn,
+				ret, duration);
+	}
 
 	return ret;
 }
@@ -786,10 +957,9 @@ int __init_or_module do_one_initcall(initcall_t fn)
 	if (initcall_blacklisted(fn))
 		return -EPERM;
 
-	if (initcall_debug)
+
 		ret = do_one_initcall_debug(fn);
-	else
-		ret = fn();
+
 
 	msgbuf[0] = 0;
 

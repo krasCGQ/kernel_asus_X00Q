@@ -68,7 +68,6 @@ config KEYBOARD_ATARI
 
 config KEYBOARD_ATKBD
 	tristate "AT keyboard"
-	default y
 	select SERIO
 	select SERIO_LIBPS2
 	select SERIO_I8042 if ARCH_MIGHT_HAVE_PC_SERIO

@@ -76,6 +76,20 @@
 #define BLANK_FLAG_ULP	FB_BLANK_NORMAL
 #endif
 
+//ASUS BSP Display +++
+#define ASUS_LCD_COMMIT_FRAMES_COUNT 5
+int asus_lcd_display_commit_cnt = ASUS_LCD_COMMIT_FRAMES_COUNT;
+bool system_doing_shutdown = false; /* To notify shutdown doing reset */
+u32 g_update_bl = 0; /* ASUS BSP Display, to record bl level from HAL*/
+extern void asus_tcon_cmd_set(char *cmd, short len);
+extern char asus_lcd_cabc_mode[2];
+extern int g_ftm_mode;
+//ASUS BSP Display ---
+
+static void asus_lcd_early_unblank_func(struct work_struct *);
+static struct workqueue_struct *asus_lcd_early_unblank_wq;
+extern int g_resume_from_fp;
+
 /*
  * Time period for fps calulation in micro seconds.
  * Default value is set to 1 sec.
@@ -92,6 +106,25 @@ static u32 mdss_fb_pseudo_palette[16] = {
 	0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff
 };
 
+uint32_t Lut_fi[33] = {
+					0, 69, 147, 234, 328,
+					429, 537, 650, 768, 897,
+					1043, 1201, 1368, 1540, 1713,
+					1884, 2048, 2212, 2383, 2556,
+					2728, 2895, 3052, 3199, 3328,
+					3446, 3559, 3666, 3768, 3862,
+					3948, 4026, 4095
+					};
+uint32_t Lut_cc[33] = {
+					0x000000FF, 0x00000116, 0x0000012E, 0x00000146, 0x0000015E,
+					0x00000176, 0x0000018E, 0x000001A6, 0x000001BE, 0x000001D6,
+					0x000001EE, 0x00000205, 0x0000021D, 0x00000235, 0x0000024D,
+					0x00000265, 0x0000027D, 0x00000295, 0x000002AC, 0x000002C4,
+					0x000002DC, 0x000002F3, 0x0000030B, 0x00000323, 0x0000033A,
+					0x00000352, 0x0000036A, 0x00000381, 0x00000399, 0x000003B1,
+					0x000003C8, 0x000003E0, 0x000003F8
+					};
+
 static struct msm_mdp_interface *mdp_instance;
 
 static int mdss_fb_register(struct msm_fb_data_type *mfd);
@@ -103,6 +136,7 @@ static int mdss_fb_pan_display(struct fb_var_screeninfo *var,
 static int mdss_fb_check_var(struct fb_var_screeninfo *var,
 			     struct fb_info *info);
 static int mdss_fb_set_par(struct fb_info *info);
+static int mdss_fb_blank(int blank_mode, struct fb_info *info);
 static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 			     int op_enable);
 static int mdss_fb_suspend_sub(struct msm_fb_data_type *mfd);
@@ -292,6 +326,7 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
 				mfd->panel_info->brightness_max);
 
+	pr_info("%s: brightness: android %d, dcs %d", __func__, value, bl_lvl);
 	if (!bl_lvl && value)
 		bl_lvl = 1;
 
@@ -913,6 +948,47 @@ static ssize_t mdss_fb_idle_pc_notify(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "idle power collapsed\n");
 }
 
+static ssize_t mdss_fb_set_early_unblank_backlight(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t len)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	u32 backlight_value;
+
+	if (!mfd) {
+		pr_err("%s: Panel info is NULL!\n", __func__);
+		return len;
+	}
+
+	if (kstrtouint(buf, 0, &backlight_value)) {
+		pr_err("kstrtouint buf error!\n");
+		return len;
+	}
+
+	printk("[Display] Setting early unblank backlight to %d.\n", backlight_value);
+	mfd->early_unblank_bl_value = backlight_value;
+
+	return len;
+}
+
+static ssize_t mdss_fb_get_early_unblank_backlight(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	int ret = 0;
+
+	if (!mfd) {
+		pr_err("%s: Panel info is NULL!\n", __func__);
+		return 0;
+	}
+
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", mfd->early_unblank_bl_value);
+
+	return ret;
+}
+
+
 static DEVICE_ATTR(msm_fb_type, S_IRUGO, mdss_fb_get_type, NULL);
 static DEVICE_ATTR(msm_fb_split, S_IRUGO | S_IWUSR, mdss_fb_show_split,
 					mdss_fb_store_split);
@@ -934,6 +1010,8 @@ static DEVICE_ATTR(measured_fps, S_IRUGO | S_IWUSR | S_IWGRP,
 static DEVICE_ATTR(msm_fb_persist_mode, S_IRUGO | S_IWUSR,
 	mdss_fb_get_persist_mode, mdss_fb_change_persist_mode);
 static DEVICE_ATTR(idle_power_collapse, S_IRUGO, mdss_fb_idle_pc_notify, NULL);
+static DEVICE_ATTR(early_unblank_backlight, S_IRUGO | S_IWUSR,
+	mdss_fb_get_early_unblank_backlight, mdss_fb_set_early_unblank_backlight);
 
 static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_type.attr,
@@ -949,6 +1027,7 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_measured_fps.attr,
 	&dev_attr_msm_fb_persist_mode.attr,
 	&dev_attr_idle_power_collapse.attr,
+	&dev_attr_early_unblank_backlight.attr,
 	NULL,
 };
 
@@ -1247,6 +1326,10 @@ static int mdss_fb_probe(struct platform_device *pdev)
 	struct mdss_overlay_private *mdp5_data = NULL;
 	int rc;
 
+#ifdef ASUS_ZE620KL_PROJECT
+	struct msmfb_mdp_pp mdp_pp;
+#endif
+
 	if (fbi_list_index >= MAX_FBI_LIST)
 		return -ENOMEM;
 
@@ -1397,6 +1480,42 @@ static int mdss_fb_probe(struct platform_device *pdev)
 
 	INIT_DELAYED_WORK(&mfd->idle_notify_work, __mdss_fb_idle_notify_work);
 
+	// for fingerprint early wakeup display
+	asus_lcd_early_unblank_wq = create_singlethread_workqueue("display_early_wq");
+	INIT_DELAYED_WORK(&mfd->early_unblank_work, asus_lcd_early_unblank_func);
+	mfd->early_unblank_work_queued = false;
+	mfd->early_unblank_bl_value = 0;
+
+#ifdef ASUS_FTM_BUILD
+	printk(KERN_EMERG "[DISP] Disable True2life feature\n");
+	return rc;
+#endif
+#ifdef ASUS_ZE620KL_PROJECT
+	if(mfd->index == 0) {
+		printk(KERN_EMERG "[DISP] Set True2life initail value for FB0\n");
+		memset(&mdp_pp, 0x00 , sizeof(struct msmfb_mdp_pp));
+		mdp_pp.data.ad_init_cfg.params.init.i_control[0] = 0x07;
+		mdp_pp.data.ad_init_cfg.params.init.i_control[1] = 198;
+		mdp_pp.data.ad_init_cfg.params.init.black_lvl = 0;
+		mdp_pp.data.ad_init_cfg.params.init.white_lvl = 0x3FF;
+		mdp_pp.data.ad_init_cfg.params.init.var = 0x65;
+		mdp_pp.data.ad_init_cfg.params.init.limit_ampl = 240;
+		mdp_pp.data.ad_init_cfg.params.init.i_dither = 0;
+		mdp_pp.data.ad_init_cfg.params.init.slope_max = 0x60;
+		mdp_pp.data.ad_init_cfg.params.init.slope_min = 32;
+		mdp_pp.data.ad_init_cfg.params.init.dither_ctl = 0x05;
+		mdp_pp.data.ad_init_cfg.params.init.format = 0x03;
+		mdp_pp.data.ad_init_cfg.params.init.auto_size = 0;
+		mdp_pp.data.ad_init_cfg.params.init.frame_w = 1080;
+		mdp_pp.data.ad_init_cfg.params.init.frame_h = 1920;
+		memcpy(mdp_pp.data.ad_init_cfg.params.init.asym_lut, Lut_fi, sizeof(uint32_t) * 33);
+		memcpy(mdp_pp.data.ad_init_cfg.params.init.color_corr_lut, Lut_cc, sizeof(uint32_t) * 33);
+		mdp_pp.op = mdp_op_ad_cfg;
+		mdp_pp.data.ad_init_cfg.ops = MDP_PP_OPS_ENABLE | MDP_PP_AD_INIT;
+		rc = mdss_mdp_ad_config(mfd, &mdp_pp.data.ad_init_cfg);
+		rc =0;
+	}
+#endif
 	return rc;
 }
 
@@ -1606,13 +1725,53 @@ static int mdss_fb_resume(struct platform_device *pdev)
 #endif
 
 #ifdef CONFIG_PM_SLEEP
+static void asus_lcd_early_unblank_func(struct work_struct *work)
+{
+	struct delayed_work *dw = to_delayed_work(work);
+	struct msm_fb_data_type *mfd = container_of(dw, struct msm_fb_data_type,
+		early_unblank_work);
+	struct fb_info *fbi;
+
+	if (!mfd) {
+		pr_err("[Display] cannot get mfd from work\n");
+		return;
+	}
+
+	fbi = mfd->fbi;
+	if (!fbi)
+		return;
+
+	printk("[Display] Early unblank func +++ \n");
+	mdss_fb_blank(FB_BLANK_UNBLANK, fbi);
+
+	// setting backlight if set
+	if (mfd->early_unblank_bl_value > 0 && mfd->early_unblank_bl_value < 256) {
+		mutex_lock(&mfd->bl_lock);
+		printk("[Display] setting backlight to %d.\n", mfd->early_unblank_bl_value);
+		mdss_fb_set_backlight(mfd, mfd->early_unblank_bl_value);
+		mutex_unlock(&mfd->bl_lock);
+	}
+
+	printk("[Display] Early unblank func --- \n");
+
+	mfd->early_unblank_work_queued = false;
+}
+
 static int mdss_fb_pm_suspend(struct device *dev)
 {
 	struct msm_fb_data_type *mfd = dev_get_drvdata(dev);
+	struct fb_info *fbi;
 	int rc = 0;
 
 	if (!mfd)
 		return -ENODEV;
+
+	fbi = mfd->fbi;
+	if (!fbi)
+		return -ENODEV;
+
+	printk("[Display] display suspend, blank display.\n");
+	mdss_fb_blank(FB_BLANK_POWERDOWN, fbi);
 
 	dev_dbg(dev, "display pm suspend\n");
 
@@ -1638,6 +1797,8 @@ static int mdss_fb_pm_suspend(struct device *dev)
 static int mdss_fb_pm_resume(struct device *dev)
 {
 	struct msm_fb_data_type *mfd = dev_get_drvdata(dev);
+	int rc = 0;
+
 	if (!mfd)
 		return -ENODEV;
 
@@ -1655,7 +1816,20 @@ static int mdss_fb_pm_resume(struct device *dev)
 	if (mfd->mdp.footswitch_ctrl)
 		mfd->mdp.footswitch_ctrl(true);
 
-	return mdss_fb_resume_sub(mfd);
+	rc = mdss_fb_resume_sub(mfd);
+
+	if (g_resume_from_fp && mfd->index == 0) {
+		if (!mfd->early_unblank_work_queued) {
+			printk("[Display] doing unblank from resume, due to fp.\n");
+			mfd->early_unblank_work_queued = true;
+			queue_delayed_work(asus_lcd_early_unblank_wq, &mfd->early_unblank_work, 0);
+			g_resume_from_fp = 0;
+		} else {
+			printk("[Display] mfd->early_unblank_work_queued returns true.\n");
+		}
+	}
+
+	return rc;
 }
 #endif
 
@@ -1749,6 +1923,7 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 			if (mfd->bl_level != bkl_lvl)
 				bl_notify_needed = true;
 			pr_debug("backlight sent to panel :%d\n", temp);
+			g_update_bl = temp;
 			pdata->set_backlight(pdata, temp);
 			mfd->bl_level = bkl_lvl;
 			mfd->bl_level_scaled = temp;
@@ -1783,6 +1958,7 @@ void mdss_fb_update_backlight(struct msm_fb_data_type *mfd)
 				mdss_fb_bl_update_notify(mfd,
 					NOTIFY_TYPE_BL_AD_ATTEN_UPDATE);
 			mdss_fb_bl_update_notify(mfd, NOTIFY_TYPE_BL_UPDATE);
+			g_update_bl = temp;
 			pdata->set_backlight(pdata, temp);
 			mfd->bl_level_scaled = mfd->unset_bl_level;
 			mfd->allow_bl_update = true;
@@ -1928,11 +2104,11 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 	}
 
 	cur_power_state = mfd->panel_power_state;
-	pr_debug("Transitioning from %d --> %d\n", cur_power_state,
+	printk("[Display] Transitioning from %d --> %d\n", cur_power_state,
 		MDSS_PANEL_POWER_ON);
 
 	if (mdss_panel_is_power_on_interactive(cur_power_state)) {
-		pr_debug("No change in power state\n");
+		printk("[Display] No change in power state, return 0\n");
 		return 0;
 	}
 
@@ -2043,7 +2219,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
-		pr_debug("unblank called. cur pwr state=%d\n", cur_power_state);
+		printk("[Display] unblank called. cur pwr state=%d\n", cur_power_state);
 		ret = mdss_fb_blank_unblank(mfd);
 		break;
 	case BLANK_FLAG_ULP:
@@ -2058,7 +2234,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 		break;
 	case BLANK_FLAG_LP:
 		req_power_state = MDSS_PANEL_POWER_LP1;
-		pr_debug(" power mode requested\n");
+		printk("[Display] low power mode requested\n");
 
 		/*
 		 * If low power mode is requested when panel is already off,
@@ -2077,8 +2253,11 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 	case FB_BLANK_POWERDOWN:
 	default:
 		req_power_state = MDSS_PANEL_POWER_OFF;
-		pr_debug("blank powerdown called\n");
+		printk("[Display] blank powerdown called\n");
 		ret = mdss_fb_blank_blank(mfd, req_power_state);
+		//ASUS BSP Display +++
+		asus_lcd_display_commit_cnt = ASUS_LCD_COMMIT_FRAMES_COUNT;
+		//ASUS BSP Display ---
 		break;
 	}
 
@@ -2896,6 +3075,9 @@ static int mdss_fb_release_all(struct fb_info *info, bool release_all)
 		mdss_fb_set_backlight(mfd, 0);
 		mutex_unlock(&mfd->bl_lock);
 
+		/* about to turn off display. set shutdown hint */
+		system_doing_shutdown = true;
+
 		ret = mdss_fb_blank_sub(FB_BLANK_POWERDOWN, info,
 			mfd->op_enable);
 		if (ret) {
@@ -3495,6 +3677,11 @@ int mdss_fb_atomic_commit(struct fb_info *info,
 
 	if (wait_for_finish)
 		ret = mdss_fb_pan_idle(mfd);
+
+	if (asus_lcd_display_commit_cnt > 0) {
+		pr_err("[Display] fb%d commit countdown: %d\n", info->node, asus_lcd_display_commit_cnt);
+		asus_lcd_display_commit_cnt--;
+	}
 
 end:
 	if (ret && (mfd->panel.type == WRITEBACK_PANEL) && wb_change)
@@ -4978,6 +5165,9 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	struct mdp_buf_sync buf_sync;
 	unsigned int dsi_mode = 0;
 	struct mdss_panel_data *pdata = NULL;
+#ifndef ASUS_ZC600KL_PROJECT
+	int panel_cabc_mode = Still_MODE;	// ASUS BSP Display +++
+#endif
 
 	if (!info || !info->par)
 		return -EINVAL;
@@ -5038,6 +5228,24 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	case MSMFB_DISPLAY_COMMIT:
 		ret = mdss_fb_display_commit(info, argp);
 		break;
+
+	// ASUS BSP Display +++
+#ifndef ASUS_ZC600KL_PROJECT
+	case MSMFB_CABC_CTRL:
+		ret = copy_from_user(&panel_cabc_mode, argp, sizeof(panel_cabc_mode));
+		if (ret) {
+			pr_err("%s: CABC mode(%d) set failed\n", __func__, panel_cabc_mode);
+			goto exit;
+		}
+		if (g_ftm_mode) {
+			pr_err("[Display] Factory mode: CABC isn't allow to set\n");
+			break;
+		}
+        asus_lcd_cabc_mode[1] = panel_cabc_mode;
+        asus_tcon_cmd_set(asus_lcd_cabc_mode, ARRAY_SIZE(asus_lcd_cabc_mode));
+		break;
+#endif
+	// ASUS BSP Display ---
 
 	case MSMFB_LPM_ENABLE:
 		ret = copy_from_user(&dsi_mode, argp, sizeof(dsi_mode));

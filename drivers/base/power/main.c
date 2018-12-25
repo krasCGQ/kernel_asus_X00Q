@@ -38,6 +38,14 @@
 #include "../base.h"
 #include "power.h"
 
+//ASUS_BSP +++
+/*[PM] pm_pwrcs_ret:
+	This flag mean dpm_suspend has been callback.
+	pm_pwrcs_ret will be cheked in function which is resume_console in printk.c
+*/
+unsigned int pm_pwrcs_ret=0;
+//ASUS_BSP ---
+
 typedef int (*pm_callback_t)(struct device *);
 
 /*
@@ -129,7 +137,7 @@ void device_pm_add(struct device *dev)
 	device_pm_check_callbacks(dev);
 	mutex_lock(&dpm_list_mtx);
 	if (dev->parent && dev->parent->power.is_prepared)
-		dev_warn(dev, "parent %s should not be sleeping\n",
+		dev_dbg(dev, "parent %s should not be sleeping\n",
 			dev_name(dev->parent));
 	list_add_tail(&dev->power.entry, &dpm_list);
 	mutex_unlock(&dpm_list_mtx);
@@ -355,8 +363,13 @@ static void pm_dev_dbg(struct device *dev, pm_message_t state, char *info)
 static void pm_dev_err(struct device *dev, pm_message_t state, char *info,
 			int error)
 {
-	printk(KERN_ERR "PM: Device %s failed to %s%s: error %d\n",
+	printk("[PM]: Device %s failed to %s%s: error %d\n",
 		dev_name(dev), pm_verb(state.event), info, error);
+
+//ASUS_BSP +++ [PM] Add suspend fail log to ASUSevtlog when pm_dev_err
+	ASUSEvtlog("PM: Device %s failed to %s%s: error %d\n",
+		dev_name(dev), pm_verb(state.event), info, error);
+//ASUS_BSP --- [PM] Add suspend fail log to ASUSevtlog when pm_dev_err
 }
 
 static void dpm_show_time(ktime_t starttime, pm_message_t state, char *info)
@@ -1535,6 +1548,7 @@ int dpm_suspend(pm_message_t state)
 		if (async_error)
 			break;
 	}
+	pm_pwrcs_ret = 1; //ASUS_BSP + [PM] This flag can check dpm_suspend state for resume_console in printk.c
 	mutex_unlock(&dpm_list_mtx);
 	async_synchronize_full();
 	if (!error)

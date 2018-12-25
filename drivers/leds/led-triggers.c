@@ -307,6 +307,25 @@ void led_trigger_blink_oneshot(struct led_trigger *trig,
 }
 EXPORT_SYMBOL_GPL(led_trigger_blink_oneshot);
 
+//+bug 305924, sunhushan.wt, ADD, 2017.11.25, add for flash light
+struct led_trigger * led_trigger_get(const char *name)
+{
+       struct led_trigger *_trig;
+
+       down_write(&triggers_list_lock);
+       /* Make sure the trigger's name isn't already in use */
+       list_for_each_entry(_trig, &trigger_list, next_trig) {
+               if (!strcmp(_trig->name, name)) {
+                       up_write(&triggers_list_lock);
+                       return _trig;
+               }
+       }
+       up_write(&triggers_list_lock);
+       return NULL;
+}
+//-bug 305924, sunhushan.wt, ADD, 2017.11.25, add for flash light
+
+
 void led_trigger_register_simple(const char *name, struct led_trigger **tp)
 {
 	struct led_trigger *trig;
@@ -327,6 +346,13 @@ void led_trigger_register_simple(const char *name, struct led_trigger **tp)
 		pr_warn("LED trigger %s failed to register (no memory)\n",
 			name);
 	}
+#ifdef ASUS_ZC600KL_PROJECT
+       //+bug 305924, sunhushan.wt, ADD, 2017.11.25, add for flash light
+       if(!strcmp("switch0_trigger", name) && trig == NULL){
+               trig = led_trigger_get(name);
+       }
+       //-bug 305924, sunhushan.wt, ADD, 2017.11.25, add for flash light
+#endif	
 	*tp = trig;
 }
 EXPORT_SYMBOL_GPL(led_trigger_register_simple);

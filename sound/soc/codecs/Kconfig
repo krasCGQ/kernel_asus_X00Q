@@ -660,6 +660,10 @@ config SND_SOC_TAS571X
 	tristate "Texas Instruments TAS5711/TAS5717/TAS5719 power amplifiers"
 	depends on I2C
 
+config SND_SOC_TFA9874
+	tristate "NXP Semiconductors TFA9874 amplifier"
+	depends on I2C
+
 config SND_SOC_TFA9879
 	tristate "NXP Semiconductors TFA9879 amplifier"
 	depends on I2C
@@ -993,6 +997,9 @@ config SND_SOC_MSM_HDMI_CODEC_RX
 	help
 	HDMI audio drivers should be built only if the platform
         supports hdmi panel.
+
+config SND_SOC_AW87319
+	tristate "Build AWINIC AW87319 ASoc Speaker PA"
 
 source "sound/soc/codecs/sdm660_cdc/Kconfig"
 source "sound/soc/codecs/msm_sdw/Kconfig"

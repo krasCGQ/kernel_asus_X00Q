@@ -26,6 +26,10 @@
 #include "trace.h"
 #include <trace/events/f2fs.h>
 
+#ifdef CONFIG_F2FS_ASYNC_FLUSH
+#include <linux/delay.h>
+#endif
+
 #define __reverse_ffz(x) __reverse_ffs(~(x))
 
 static struct kmem_cache *discard_entry_slab;
@@ -552,8 +556,39 @@ static int issue_flush_thread(void *data)
 	struct flush_cmd_control *fcc = SM_I(sbi)->fcc_info;
 	wait_queue_head_t *q = &fcc->flush_wait_queue;
 repeat:
+
+#ifdef CONFIG_F2FS_ASYNC_FLUSH
+	atomic_set(&fcc->thread_stopped,0);
+#endif
 	if (kthread_should_stop())
 		return 0;
+
+#ifdef CONFIG_F2FS_ASYNC_FLUSH
+	if( !sbi->s_ndevs ) {
+
+		if (atomic_read(&fcc->need_async_flush)) {
+
+			atomic_set(&fcc->need_async_flush,0);
+			// not issue flush before timeout
+			msleep(30);
+			if(atomic_read(&fcc->need_async_flush)) {
+				pr_debug("ssue_flush_thread() 1, sbi->s_ndevs: %d\n",sbi->s_ndevs);
+				goto repeat;
+			}
+
+		}
+
+		pr_debug("ssue_flush_thread() 2, sbi->s_ndevs: %d\n",sbi->s_ndevs);
+
+		sb_start_intwrite(sbi->sb);
+		// flush
+		__submit_flush_wait(sbi, sbi->sb->s_bdev);
+		sb_end_intwrite(sbi->sb);
+
+		atomic_set(&fcc->thread_stopped,1);
+
+	} else {
+#else
 
 	sb_start_intwrite(sbi->sb);
 
@@ -578,9 +613,18 @@ repeat:
 	}
 
 	sb_end_intwrite(sbi->sb);
+#endif
 
+#ifdef CONFIG_F2FS_ASYNC_FLUSH
+	}
+	wait_event_interruptible(*q,
+		kthread_should_stop() || !llist_empty(&fcc->issue_list) || atomic_read(&fcc->need_async_flush));
+
+#else
 	wait_event_interruptible(*q,
 		kthread_should_stop() || !llist_empty(&fcc->issue_list));
+#endif
+
 	goto repeat;
 }
 
@@ -598,14 +642,34 @@ int f2fs_issue_flush(struct f2fs_sb_info *sbi, nid_t ino)
 		atomic_inc(&fcc->issued_flush);
 		return ret;
 	}
-
+#ifdef CONFIG_F2FS_ASYNC_FLUSH
+	if ( sbi->s_ndevs > 1) {
+	// always allow flush in merge flush thread
+#else
 	if (atomic_inc_return(&fcc->issing_flush) == 1 || sbi->s_ndevs > 1) {
+#endif
 		ret = submit_flush_wait(sbi, ino);
 		atomic_dec(&fcc->issing_flush);
 
 		atomic_inc(&fcc->issued_flush);
 		return ret;
 	}
+
+#ifdef CONFIG_F2FS_ASYNC_FLUSH
+	//for handling many flush request at a time
+	if( !sbi->s_ndevs ) {
+		// only for sigle f2fs device
+		atomic_set(&fcc->need_async_flush,1);
+
+		if (atomic_read(&fcc->thread_stopped)) {
+			pr_debug("f2fs_issue_flush() wakeup, sbi->s_ndevs: %d\n",sbi->s_ndevs);
+			wake_up(&fcc->flush_wait_queue);
+		}
+
+		return 0;
+	} else {
+
+#endif
 
 	cmd.ino = ino;
 	init_completion(&cmd.wait);
@@ -646,6 +710,9 @@ int f2fs_issue_flush(struct f2fs_sb_info *sbi, nid_t ino)
 	}
 
 	return cmd.ret;
+#ifdef CONFIG_F2FS_ASYNC_FLUSH
+	}
+#endif
 }
 
 int create_flush_cmd_control(struct f2fs_sb_info *sbi)

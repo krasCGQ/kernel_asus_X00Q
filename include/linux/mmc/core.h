@@ -227,7 +227,10 @@ extern void mmc_cmdq_clk_scaling_start_busy(struct mmc_host *host,
 extern void mmc_cmdq_clk_scaling_stop_busy(struct mmc_host *host,
 	bool lock_needed, bool is_cmdq_dcmd);
 extern int mmc_recovery_fallback_lower_speed(struct mmc_host *host);
+extern unsigned int emmc_get_erase_count(struct mmc_card *card);	// ASUS_BSP PeterYeh : for dump hynix erase count
 
+
+#define EMMC_STATUS //ASUS_BSP PeterYeh : define dump eMMC health check feature +++
 /**
  *	mmc_claim_host - exclusively claim a host
  *	@host: mmc host to claim

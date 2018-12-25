@@ -187,7 +187,6 @@ config USB_NET_AX88179_178A
 	depends on USB_USBNET
 	select CRC32
 	select PHYLIB
-	default y
 	help
 	  This option adds support for ASIX AX88179 based USB 3.0/2.0
 	  to Gigabit Ethernet adapters.
@@ -203,7 +202,6 @@ config USB_NET_AX88179_178A
 config USB_NET_CDCETHER
 	tristate "CDC Ethernet support (smart devices such as cable modems)"
 	depends on USB_USBNET
-	default y
 	help
 	  This option supports devices conforming to the Communication Device
 	  Class (CDC) Ethernet Control Model, a specification that's easy to
@@ -245,7 +243,6 @@ config USB_NET_CDC_EEM
 config USB_NET_CDC_NCM
 	tristate "CDC NCM support"
 	depends on USB_USBNET
-	default y
 	help
 	  This driver provides support for CDC NCM (Network Control Model
 	  Device USB Class Specification). The CDC NCM specification is
@@ -356,7 +353,6 @@ config USB_NET_GL620A
 
 config USB_NET_NET1080
 	tristate "NetChip 1080 based cables (Laplink, ...)"
-	default y
 	depends on USB_USBNET
 	help
 	  Choose this option if you're using a host-to-host cable based
@@ -402,7 +398,6 @@ config USB_NET_CDC_SUBSET_ENABLE
 config USB_NET_CDC_SUBSET
 	tristate "Simple USB Network Links (CDC Ethernet subset)"
 	depends on USB_USBNET
-	default y
 	help
 	  This driver module supports USB network devices that can work
 	  without any device-specific information.  Select it if you have
@@ -480,7 +475,6 @@ config USB_NET_ZAURUS
 	depends on USB_USBNET
 	select USB_NET_CDCETHER
 	select CRC32
-	default y
 	help
 	  Choose this option to support the usb networking links used by
 	  Zaurus models like the SL-5000D, SL-5500, SL-5600, A-300, B-500.

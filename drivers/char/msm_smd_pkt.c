@@ -106,6 +106,7 @@ static void *smd_pkt_ilctxt;
 static int msm_smd_pkt_debug_mask;
 module_param_named(debug_mask, msm_smd_pkt_debug_mask,
 		int, S_IRUGO | S_IWUSR | S_IWGRP);
+extern int modem_resume_irq_flag_function(void);/*ASUS-BBSP Log Modem Wake Up Info+*/
 
 enum {
 	SMD_PKT_STATUS = 1U << 0,
@@ -525,6 +526,13 @@ wait_for_packet:
 	}
 	spin_unlock_irqrestore(&smd_pkt_devp->pa_spinlock, flags);
 	mutex_unlock(&smd_pkt_devp->ch_lock);
+
+	/*ASUS-BBSP Log Modem Wake Up Info+++*/
+	if (modem_resume_irq_flag_function()) {
+		u8 *buff = (u8 *)buf;
+		pr_info("[WakeUpInfo-SMDPKT]svc=0x%x, type=%d, msg=0x%x\n", buff[4], buff[6], buff[9]);
+	}
+	/*ASUS-BBSP Log Modem Wake Up Info---*/
 
 	r = copy_to_user(_buf, buf, bytes_read);
 	if (r) {

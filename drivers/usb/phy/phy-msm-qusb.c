@@ -119,6 +119,16 @@ unsigned int tune5;
 module_param(tune5, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(tune5, "QUSB PHY TUNE5");
 
+// ASUS_BSP Hardcode Eye-Diagram Parameters +++
+unsigned int default_device_parameter_1;
+unsigned int default_device_parameter_2;
+unsigned int default_device_parameter_3;
+unsigned int default_device_parameter_4;
+unsigned int default_host_parameter_1;
+unsigned int default_host_parameter_2;
+unsigned int default_host_parameter_3;
+unsigned int default_host_parameter_4;
+// ASUS_BSP Hardcode Eye-Diagram Parameters ---
 
 struct qusb_phy {
 	struct usb_phy		phy;
@@ -495,7 +505,7 @@ static int qusb_phy_init(struct usb_phy *phy)
 	u8 reg;
 	bool pll_lock_fail = false;
 
-	dev_dbg(phy->dev, "%s\n", __func__);
+	pr_info("[USB] %s +++ \n", __func__);
 
 	ret = qusb_phy_enable_power(qphy, true);
 	if (ret)
@@ -589,9 +599,76 @@ static int qusb_phy_init(struct usb_phy *phy)
 				qphy->base + QUSB2PHY_PORT_TUNE2);
 	}
 
+	//  ********** ASUS_BSP Hardcode Eye-Diagram Parameters **********
+	//  ZE620KL_SR : 0
+	//  ZE620KL_ER : 2
+	pr_info("[USB] %s(): Current hardware ID : (%d)", __func__, g_ASUS_hwID);
+	switch(g_ASUS_hwID){
+		case ZE620KL_ER:
+			default_device_parameter_1=0xf8;
+			default_device_parameter_2=0x53;
+			default_device_parameter_3=0x81;
+			default_device_parameter_4=0xcf;
+			default_host_parameter_1=0xf8;
+			default_host_parameter_2=0x13;
+			default_host_parameter_3=0x81;
+			default_host_parameter_4=0xcf;
+		break;
+		case ZE620KL_SR:
+			default_device_parameter_1=0xf8;
+			default_device_parameter_2=0x13;
+			default_device_parameter_3=0x81;
+			default_device_parameter_4=0xcf;
+			default_host_parameter_1=0xf8;
+			default_host_parameter_2=0x13;
+			default_host_parameter_3=0x81;
+			default_host_parameter_4=0xcf;
+		break;
+		default:
+			default_device_parameter_1=0xf8;
+			default_device_parameter_2=0x53;
+			default_device_parameter_3=0x81;
+			default_device_parameter_4=0xcf;
+			default_host_parameter_1=0xf8;
+			default_host_parameter_2=0x13;
+			default_host_parameter_3=0x81;
+			default_host_parameter_4=0xcf;
+		break;
+	}
+	if(g_ASUS_prjID==0xA){
+		default_device_parameter_1=0xf8;
+		default_device_parameter_2=0x53;
+		default_device_parameter_3=0x83;
+		default_device_parameter_4=0xc7;
+		default_host_parameter_1=0xf8;
+		default_host_parameter_2=0x53;
+		default_host_parameter_3=0x83;
+		default_host_parameter_4=0xc7;
+	}
+	if(qphy->phy.flags & PHY_HOST_MODE) {
+		pr_info("[USB] %s():host default modparams val:0x%x %x %x %x\n",
+				__func__, default_host_parameter_1, default_host_parameter_2,
+				default_host_parameter_3, default_host_parameter_4);
+		writel_relaxed(default_host_parameter_1, qphy->base + QUSB2PHY_PORT_TUNE1);
+		writel_relaxed(default_host_parameter_2, qphy->base + QUSB2PHY_PORT_TUNE2);
+		writel_relaxed(default_host_parameter_3, qphy->base + QUSB2PHY_PORT_TUNE3);
+		writel_relaxed(default_host_parameter_4, qphy->base + QUSB2PHY_PORT_TUNE4);
+	}
+	else
+	{
+		pr_info("[USB] %s():device default modparams val:0x%x %x %x %x\n",
+				__func__, default_device_parameter_1, default_device_parameter_2,
+				default_device_parameter_3, default_device_parameter_4);
+		writel_relaxed(default_device_parameter_1, qphy->base + QUSB2PHY_PORT_TUNE1);
+		writel_relaxed(default_device_parameter_2, qphy->base + QUSB2PHY_PORT_TUNE2);
+		writel_relaxed(default_device_parameter_3, qphy->base + QUSB2PHY_PORT_TUNE3);
+		writel_relaxed(default_device_parameter_4, qphy->base + QUSB2PHY_PORT_TUNE4);
+	}
+	//  ********** ASUS_BSP Hardcode Eye-Diagram Parameters **********
+
 	/* If tune modparam set, override tune value */
 
-	pr_debug("%s():userspecified modparams TUNEX val:0x%x %x %x %x %x\n",
+	pr_info("[USB] %s():userspecified modparams TUNEX val:0x%x %x %x %x %x\n",
 				__func__, tune1, tune2, tune3, tune4, tune5);
 	if (tune1)
 		writel_relaxed(tune1,
@@ -615,6 +692,13 @@ static int qusb_phy_init(struct usb_phy *phy)
 
 	/* ensure above writes are completed before re-enabling PHY */
 	wmb();
+
+	pr_info("[USB] Read Param:%02x, Param2:%02x, Param3:%02x, Param4:%02x, Param5:%02x\n",
+		readb_relaxed(qphy->base + QUSB2PHY_PORT_TUNE1),
+		readb_relaxed(qphy->base + QUSB2PHY_PORT_TUNE2),
+		readb_relaxed(qphy->base + QUSB2PHY_PORT_TUNE3),
+		readb_relaxed(qphy->base + QUSB2PHY_PORT_TUNE4),
+		readb_relaxed(qphy->base + QUSB2PHY_PORT_TUNE5));
 
 	/* Enable the PHY */
 	if (qphy->major_rev < 2)
@@ -669,6 +753,7 @@ static int qusb_phy_init(struct usb_phy *phy)
 		WARN_ON(1);
 	}
 
+	pr_info("[USB] %s --- \n",__func__);
 	return 0;
 }
 

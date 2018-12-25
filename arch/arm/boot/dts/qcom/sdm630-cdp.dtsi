@@ -84,9 +84,11 @@
 	};
 };
 
+/* bsp remove this setting
 &pm660_charger {
 	qcom,batteryless-platform;
 };
+*/
 
 &sdhc_1 {
 	/* device core power supply */

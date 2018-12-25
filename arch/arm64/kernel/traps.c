@@ -243,6 +243,12 @@ void show_stack(struct task_struct *tsk, unsigned long *sp)
 	barrier();
 }
 
+//void dump_stack(void)
+//{
+//	dump_backtrace(NULL, NULL);
+//}
+//EXPORT_SYMBOL(dump_stack); //ASUS_BSP Deeo : add for SD Tuxera module +++
+
 #ifdef CONFIG_PREEMPT
 #define S_PREEMPT " PREEMPT"
 #else
@@ -335,15 +341,23 @@ void die(const char *str, struct pt_regs *regs, int err)
 {
 	enum bug_trap_type bug_type = BUG_TRAP_TYPE_NONE;
 	unsigned long flags = oops_begin();
-	int ret;
+	int ret = 0;
 
+	if (regs != NULL) {
 	if (!user_mode(regs))
 		bug_type = report_bug(regs->pc, regs);
 	if (bug_type != BUG_TRAP_TYPE_NONE)
 		str = "Oops - BUG";
 
-	ret = __die(str, err, regs);
+		ret = __die(str, err, regs);
+	}
 
+	if (in_interrupt()) {
+		printk("DIE: in int %s", str);
+    }
+	if (panic_on_oops) {
+		printk("DIE: %s", str);
+    }
 	oops_end(flags, regs, ret);
 }
 

@@ -76,6 +76,8 @@ static inline bool is_ov_right_blend(struct mdp_rect *left_blend,
 		(left_blend->h == right_blend->h));
 }
 
+int g_fps_customise_update = 0; //austin+++
+
 /**
  * __is_more_decimation_doable() -
  * @pipe: pointer to pipe data structure
@@ -3599,6 +3601,12 @@ static ssize_t dynamic_fps_sysfs_wta_dfps(struct device *dev,
 		pr_err("Data values out of bound.\n");
 		return -EINVAL;
 	}
+
+	//fix DFPS austin+++
+	if (data.fps != pdata->panel_info.default_fps)
+		g_fps_customise_update = data.fps;
+	else
+		g_fps_customise_update = pdata->panel_info.default_fps;
 
 	rc = mdss_mdp_dfps_update_params(mfd, pdata, &data);
 	if (rc) {

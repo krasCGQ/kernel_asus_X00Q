@@ -254,8 +254,12 @@ EXPORT_SYMBOL_GPL(kernel_halt);
  *
  *	Shutdown everything and perform a clean system power_off.
  */
+extern bool g_Charger_mode;
 void kernel_power_off(void)
 {
+	if(g_Charger_mode){
+		ASUSEvtlog("--------------- Power down : Charger Mode ---------------\n");
+	}
 	kernel_shutdown_prepare(SYSTEM_POWER_OFF);
 	if (pm_power_off_prepare)
 		pm_power_off_prepare();

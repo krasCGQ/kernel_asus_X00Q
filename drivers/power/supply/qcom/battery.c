@@ -42,6 +42,13 @@
 #define USBIN_I_VOTER			"USBIN_I_VOTER"
 #define FCC_STEPPER_VOTER		"FCC_STEPPER_VOTER"
 
+/* WeiYu: warning call trace in init ++
+asus_init_work_done:
+It seems some work are called in cancel_delay_work_sync() while
+there work are not inited yet. It cause warning call trace in kernel init.
+*/
+int asus_init_work_done =0;
+
 struct pl_data {
 	int			pl_mode;
 	int			slave_pct;
@@ -937,11 +944,13 @@ static int pl_disable_vote_callback(struct votable *votable,
 	chip->pl_settled_ua = 0;
 
 	/* Cancel FCC step change work */
+	if(asus_init_work_done)
 	cancel_delayed_work_sync(&chip->fcc_step_update_work);
 
 	if (!pl_disable) { /* enable */
 		/* keep system awake to talk to slave charger through i2c */
-		cancel_delayed_work_sync(&chip->pl_awake_work);
+		if(asus_init_work_done)
+			cancel_delayed_work_sync(&chip->pl_awake_work);
 		if (chip->pl_awake_votable)
 			vote(chip->pl_awake_votable, PL_VOTER, true, 0);
 
@@ -1011,8 +1020,8 @@ static int pl_disable_vote_callback(struct votable *votable,
 
 		rerun_election(chip->fcc_votable);
 		rerun_election(chip->fv_votable);
-
-		cancel_delayed_work_sync(&chip->pl_awake_work);
+		if(asus_init_work_done)
+			cancel_delayed_work_sync(&chip->pl_awake_work);
 		if (chip->pl_awake_votable)
 			schedule_delayed_work(&chip->pl_awake_work,
 							msecs_to_jiffies(5000));
@@ -1405,6 +1414,8 @@ int qcom_batt_init(void)
 	INIT_DELAYED_WORK(&chip->pl_awake_work, pl_awake_work);
 	INIT_DELAYED_WORK(&chip->fcc_step_update_work, fcc_step_update_work);
 
+	asus_init_work_done = 1;
+
 	rc = pl_register_notifier(chip);
 	if (rc < 0) {
 		pr_err("Couldn't register psy notifier rc = %d\n", rc);
@@ -1428,7 +1439,7 @@ int qcom_batt_init(void)
 	}
 
 	the_chip = chip;
-
+	pr_info("[CHG]batt_init done\n");
 	return 0;
 
 unreg_notifier:

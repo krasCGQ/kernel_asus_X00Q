@@ -1355,7 +1355,8 @@ static void default_options(struct f2fs_sb_info *sbi)
 	F2FS_OPTION(sbi).inline_xattr_size = DEFAULT_INLINE_XATTR_ADDRS;
 	F2FS_OPTION(sbi).whint_mode = WHINT_MODE_OFF;
 	F2FS_OPTION(sbi).alloc_mode = ALLOC_MODE_DEFAULT;
-	F2FS_OPTION(sbi).fsync_mode = FSYNC_MODE_POSIX;
+	//F2FS_OPTION(sbi).fsync_mode = FSYNC_MODE_NOBARRIER;//ASUS_BSP: modify for random write performance
+	F2FS_OPTION(sbi).fsync_mode = FSYNC_MODE_POSIX;//ASUS_BSP: modify for random write performance
 	F2FS_OPTION(sbi).test_dummy_encryption = false;
 	sbi->readdir_ra = 1;
 

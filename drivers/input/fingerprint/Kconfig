@@ -1,0 +1,5 @@
+config GOODIX_GF5228
+	tristate "FingerPrint sensor"
+	depends on SPI_MASTER
+	help
+		add for support FP Sensor.

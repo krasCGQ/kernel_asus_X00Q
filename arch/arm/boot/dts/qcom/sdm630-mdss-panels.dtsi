@@ -18,6 +18,8 @@
 #include "dsi-panel-rm67195-amoled-fhd-cmd.dtsi"
 #include "dsi-panel-sharp-split-link-wuxga-video.dtsi"
 
+#include "dsi-panel-tm5p5-r63350-1080p-video.dtsi"
+
 &soc {
 	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
 		#address-cells = <1>;

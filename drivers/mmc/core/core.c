@@ -51,6 +51,7 @@
 #include "mmc_ops.h"
 #include "sd_ops.h"
 #include "sdio_ops.h"
+#include "mmc_config.h"		//ASUS_BSP PeterYeh : eMMC porting
 
 EXPORT_TRACEPOINT_SYMBOL_GPL(mmc_blk_erase_start);
 EXPORT_TRACEPOINT_SYMBOL_GPL(mmc_blk_erase_end);
@@ -3927,10 +3928,16 @@ EXPORT_SYMBOL(mmc_can_erase);
 
 int mmc_can_trim(struct mmc_card *card)
 {
+//ASUS_BSP PeterYeh: turn off trim  +++
+	if(MMC_CONFIG_SETTING_TRIM){
 	if ((card->ext_csd.sec_feature_support & EXT_CSD_SEC_GB_CL_EN) &&
 	    (!(card->quirks & MMC_QUIRK_TRIM_BROKEN)))
 		return 1;
 	return 0;
+		}
+	else
+		return 0;
+//ASUS_BSP PeterYeh:turn off trim ---
 }
 EXPORT_SYMBOL(mmc_can_trim);
 
@@ -3940,28 +3947,46 @@ int mmc_can_discard(struct mmc_card *card)
 	 * As there's no way to detect the discard support bit at v4.5
 	 * use the s/w feature support filed.
 	 */
+//ASUS_BSP PeterYeh:turn off discard +++
+	if(MMC_CONFIG_SETTING_DISCARD){
 	if (card->ext_csd.feature_support & MMC_DISCARD_FEATURE)
 		return 1;
 	return 0;
+	}
+	else
+		return 0;
+//ASUS_BSP PeterYeh:turn off discard ---
 }
 EXPORT_SYMBOL(mmc_can_discard);
 
 int mmc_can_sanitize(struct mmc_card *card)
 {
+//ASUS_BSP PeterYeh:turn off sanitize+++
+	if(MMC_CONFIG_SETTING_SANITIZE){
 	if (!mmc_can_trim(card) && !mmc_can_erase(card))
 		return 0;
 	if (card->ext_csd.sec_feature_support & EXT_CSD_SEC_SANITIZE)
 		return 1;
 	return 0;
+	}
+	else
+		return 0;
+//ASUS_BSP PeterYeh:turn off sanitize ---
 }
 EXPORT_SYMBOL(mmc_can_sanitize);
 
 int mmc_can_secure_erase_trim(struct mmc_card *card)
 {
+//ASUS_BSP PeterYeh:turn off trim +++
+	if(MMC_CONFIG_SETTING_TRIM){
 	if ((card->ext_csd.sec_feature_support & EXT_CSD_SEC_ER_EN) &&
 	    !(card->quirks & MMC_QUIRK_SEC_ERASE_TRIM_BROKEN))
 		return 1;
 	return 0;
+	}
+	else
+		return 0;
+//ASUS_BSP PeterYeh:turn off trim ---
 }
 EXPORT_SYMBOL(mmc_can_secure_erase_trim);
 

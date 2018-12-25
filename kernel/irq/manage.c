@@ -606,7 +606,7 @@ int irq_set_irq_wake(unsigned int irq, unsigned int on)
 
 	if (!desc)
 		return -EINVAL;
-
+//printk("[irq] irq_set_irq_wake: on=%d irq(%d)  name: %s \n",on ,irq ,desc->action->name);
 	/* wakeup-capable irqs can be shared between drivers that
 	 * don't need to have the same sleep mode behaviors.
 	 */

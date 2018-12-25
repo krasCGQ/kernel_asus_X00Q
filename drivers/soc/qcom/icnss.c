@@ -51,6 +51,12 @@
 
 #include "wlan_firmware_service_v01.h"
 
+/* ASUS_BSP+++ for wlan firmware log */
+static int do_wlan_fw_log = 0;
+module_param(do_wlan_fw_log, int, S_IWUSR | S_IRUGO);
+MODULE_PARM_DESC(do_wlan_fw_log, "Is the wlan fw log flag");
+/* ASUS_BSP--- for wlan firmware log */
+
 #ifdef CONFIG_ICNSS_DEBUG
 unsigned long qmi_timeout = 10000;
 module_param(qmi_timeout, ulong, 0600);
@@ -1187,6 +1193,14 @@ bool icnss_is_fw_down(void)
 }
 EXPORT_SYMBOL(icnss_is_fw_down);
 
+/* ASUS_BSP+++ for wlan firmware log */
+int wcnss_get_fw_log_flag(void)
+{
+	pr_info("[wcnss]: do_wlan_fw_log=%d.\n", do_wlan_fw_log);
+	return do_wlan_fw_log;
+}
+EXPORT_SYMBOL(wcnss_get_fw_log_flag);
+/* ASUS_BSP--- for wlan firmware log */
 
 int icnss_power_off(struct device *dev)
 {

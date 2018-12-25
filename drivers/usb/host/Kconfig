@@ -95,7 +95,6 @@ config USB_EHCI_ROOT_HUB_TT
 config USB_EHCI_TT_NEWSCHED
 	bool "Improved Transaction Translator scheduling"
 	depends on USB_EHCI_HCD
-	default y
 	---help---
 	  This changes the periodic scheduling code to fill more of the low
 	  and full speed bandwidth available from the Transaction Translator
@@ -120,7 +119,6 @@ if USB_EHCI_HCD
 config USB_EHCI_PCI
 	tristate
 	depends on PCI
-	default y
 
 config USB_EHCI_HCD_PMC_MSP
 	tristate "EHCI support for on-chip PMC MSP71xx USB controller"
@@ -502,7 +500,6 @@ config USB_OHCI_HCD_PPC_OF
 config USB_OHCI_HCD_PCI
 	tristate "OHCI support for PCI-bus USB controllers"
 	depends on PCI
-	default y
 	select USB_OHCI_LITTLE_ENDIAN
 	---help---
 	  Enables support for PCI-bus plug-in USB controller cards.

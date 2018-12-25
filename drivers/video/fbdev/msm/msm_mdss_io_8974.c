@@ -1896,6 +1896,8 @@ static bool mdss_dsi_is_ulps_req_valid(struct mdss_dsi_ctrl_pdata *ctrl,
 	pr_debug("%s: checking ulps req validity for ctrl%d\n",
 		__func__, ctrl->ndx);
 
+	pr_err("%s: ULPS feature is %s\n", __func__, pinfo->ulps_suspend_enabled ? "Enable" : "Disable");
+
 	if (!mdss_dsi_ulps_feature_enabled(pdata) &&
 			!pinfo->ulps_suspend_enabled) {
 		pr_debug("%s: ULPS feature is not enabled\n", __func__);

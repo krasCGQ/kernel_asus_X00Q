@@ -2210,6 +2210,35 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 {
 	struct cpufreq_governor *old_gov;
 	int ret;
+#ifdef ASUS_ZE620KL_PROJECT
+	static int powersave = 0;
+
+	if((new_policy->cpu == 0) && (new_policy->min == 633000))
+		powersave = 1;
+	if((new_policy->cpu == 0) && (new_policy->min == 633300))
+		powersave = 0;
+	if(powersave == 0) {
+		if(new_policy->cpu < 4) {
+			if(new_policy->max > 1593600) {
+				pr_debug("%s: setting CPU%u max_freq to %u instead of %u kHz\n",__func__,new_policy->cpu,1593600,new_policy->max);
+				new_policy->max = 1593600;
+			}
+			if(new_policy->min > 1593600) {
+				pr_debug("%s: setting CPU%u min_freq to %u instead of %u kHz\n",__func__,new_policy->cpu,1593600,new_policy->min);
+				new_policy->min = 1593600;
+			}
+		} else {
+			if(new_policy->max > 1766400) {
+				pr_debug("%s: setting CPU%u max_freq to %u instead of %u kHz\n",__func__,new_policy->cpu,1766400,new_policy->max);
+				new_policy->max = 1766400;
+			}
+			if(new_policy->min > 1766400) {
+				pr_debug("%s: setting CPU%u min_freq to %u instead of %u kHz\n",__func__,new_policy->cpu,1766400,new_policy->min);
+				new_policy->min = 1766400;
+			}
+		}
+	}
+#endif
 
 	pr_debug("setting new policy for CPU %u: %u - %u kHz\n",
 		 new_policy->cpu, new_policy->min, new_policy->max);

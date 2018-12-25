@@ -20,6 +20,10 @@
 #include "../codecs/sdm660_cdc/msm-digital-cdc.h"
 #include "../codecs/sdm660_cdc/msm-analog-cdc.h"
 #include "../codecs/msm_sdw/msm_sdw.h"
+#ifdef ASUS_ZC600KL_PROJECT
+#include <linux/delay.h>
+#include "../codecs/aw87319_audio_pa.h"
+#endif
 
 #define __CHIPSET__ "SDM660 "
 #define MSM_DAILINK_NAME(name) (__CHIPSET__#name)
@@ -50,6 +54,13 @@ enum {
 	SLIM_MAX,
 };
 
+#ifdef ASUS_ZC600KL_PROJECT
+static int ext_spk_pa_mode = 0;
+static struct device_node *analog_switch_gpio;
+static struct device_node *analog_switch_gpio_en;
+#endif
+
+#if 0
 /*TDM default offset currently only supporting TDM_RX_0 and TDM_TX_0 */
 static unsigned int tdm_slot_offset[TDM_PORT_MAX][TDM_SLOT_OFFSET_MAX] = {
 	{0, 4, 8, 12, 16, 20, 24, 28},/* TX_0 | RX_0 */
@@ -61,6 +72,7 @@ static unsigned int tdm_slot_offset[TDM_PORT_MAX][TDM_SLOT_OFFSET_MAX] = {
 	{AFE_SLOT_MAPPING_OFFSET_INVALID},/* TX_6 | RX_6 */
 	{AFE_SLOT_MAPPING_OFFSET_INVALID},/* TX_7 | RX_7 */
 };
+#endif
 
 static struct afe_clk_set int_mi2s_clk[INT_MI2S_MAX] = {
 	{
@@ -155,6 +167,10 @@ static const char *const loopback_mclk_text[] = {"DISABLE", "ENABLE"};
 static char const *bt_sample_rate_text[] = {"KHZ_8", "KHZ_16", "KHZ_48"};
 static char const *bt_sample_rate_rx_text[] = {"KHZ_8", "KHZ_16", "KHZ_48"};
 static char const *bt_sample_rate_tx_text[] = {"KHZ_8", "KHZ_16", "KHZ_48"};
+#ifdef ASUS_ZC600KL_PROJECT
+static char const *ext_spk_switch_text[] ={"Off","On"};
+static char const *analog_switch_text[] ={"Off","On"};
+#endif
 
 static SOC_ENUM_SINGLE_EXT_DECL(int0_mi2s_rx_sample_rate, int_mi2s_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(int0_mi2s_rx_chs, int_mi2s_ch_text);
@@ -173,6 +189,10 @@ static SOC_ENUM_SINGLE_EXT_DECL(loopback_mclk_en, loopback_mclk_text);
 static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate, bt_sample_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate_rx, bt_sample_rate_rx_text);
 static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate_tx, bt_sample_rate_tx_text);
+#ifdef ASUS_ZC600KL_PROJECT
+static SOC_ENUM_SINGLE_EXT_DECL(ext_spk_switch, ext_spk_switch_text);
+static SOC_ENUM_SINGLE_EXT_DECL(analog_switch, analog_switch_text);
+#endif
 
 static int msm_dmic_event(struct snd_soc_dapm_widget *w,
 			  struct snd_kcontrol *kcontrol, int event);
@@ -485,6 +505,9 @@ done:
 static int is_ext_spk_gpio_support(struct platform_device *pdev,
 				   struct msm_asoc_mach_data *pdata)
 {
+#ifdef ASUS_ZC600KL_PROJECT
+	int ret = 0;
+#endif
 	const char *spk_ext_pa = "qcom,msm-spk-ext-pa";
 
 	pr_debug("%s:Enter\n", __func__);
@@ -502,6 +525,38 @@ static int is_ext_spk_gpio_support(struct platform_device *pdev,
 			return -EINVAL;
 		}
 	}
+
+#ifdef ASUS_ZC600KL_PROJECT
+	analog_switch_gpio_en = of_parse_phandle(pdev->dev.of_node,"qcom,msm-analog-switch-en", 0);
+	if (!analog_switch_gpio_en)
+	{
+		pr_err("no analog_switch_en_gpio node\n");
+	}
+	else
+	{
+		ret = msm_cdc_pinctrl_select_active_state(analog_switch_gpio_en);
+		if (ret)
+		{
+			pr_err("%s: %s set cannot be active\n",__func__, "analog_switch_en_gpio");
+			return ret;
+		}
+	}
+
+	analog_switch_gpio = of_parse_phandle(pdev->dev.of_node,"qcom,msm-analog-switch", 0);
+	if (!analog_switch_gpio)
+	{
+		pr_err("no analog_switch_gpio node\n");
+	}
+	else
+	{
+		ret = msm_cdc_pinctrl_select_active_state(analog_switch_gpio);
+		if (ret)
+		{
+			pr_err("%s: %s set cannot be active\n", __func__, "analog_switch_gpio");
+			return ret;
+		}
+	}
+#endif
 	return 0;
 }
 
@@ -978,6 +1033,85 @@ static int msm_bt_sample_rate_tx_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+#ifdef ASUS_ZC600KL_PROJECT
+static int ext_spk_mode_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	ucontrol->value.integer.value[0] = ext_spk_pa_mode;
+	pr_debug("%s: ext spk mode: %d\n", __func__,
+		ext_spk_pa_mode);
+
+	return 0;
+}
+
+static int ext_spk_mode_put(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	ext_spk_pa_mode = ucontrol->value.integer.value[0];
+
+	/* for AW87319 sound Speaker PA */
+	if (ext_spk_pa_mode) {
+		pr_debug("%s: Enable external PA\n", __func__);
+		aw87319_audio_pa_speaker_on();
+		msleep(45);     // 42ms to 50ms, make sure the mode is built
+	}
+	else
+	{
+		pr_debug("%s: Disable external PA\n", __func__);
+		aw87319_audio_pa_off();
+	}
+
+	pr_debug("%s ext spk mode: %d\n", __func__,  ext_spk_pa_mode);
+
+	return 0;
+}
+
+static int analog_switch_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+
+	bool status = msm_cdc_pinctrl_get_state(analog_switch_gpio);
+	if (status == 1) {
+		ucontrol->value.integer.value[0] = 1;
+	} else {
+		ucontrol->value.integer.value[0] = 0;
+	}
+
+	dev_dbg(codec->dev, "%s: value.integer.value[0] = %ld\n",
+				__func__, ucontrol->value.integer.value[0]);
+	return 0;
+}
+
+static int analog_switch_set(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+
+	dev_dbg(codec->dev, "%s: hs_spk_analog_swtich = %ld\n",
+		__func__, ucontrol->value.integer.value[0]);
+
+	switch (ucontrol->value.integer.value[0]) {
+	case 0:
+		dev_dbg(codec->dev, "%s: set analog switch en, disable analog switch en\n", __func__);
+		msm_cdc_pinctrl_select_sleep_state(analog_switch_gpio_en);
+		dev_dbg(codec->dev, "%s: set analog switch, disconnect headset\n", __func__);
+		msm_cdc_pinctrl_select_sleep_state(analog_switch_gpio);
+		break;
+	case 1:
+		dev_dbg(codec->dev, "%s: set analog switch en, enable analog switch en\n", __func__);
+		msm_cdc_pinctrl_select_active_state(analog_switch_gpio_en);
+		dev_dbg(codec->dev, "%s: set analog switch, connect headset\n", __func__);
+		msm_cdc_pinctrl_select_active_state(analog_switch_gpio);
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+#endif
+
 static const struct snd_kcontrol_new msm_snd_controls[] = {
 	SOC_ENUM_EXT("INT0_MI2S_RX Format", int0_mi2s_rx_format,
 		     int_mi2s_bit_format_get, int_mi2s_bit_format_put),
@@ -1011,6 +1145,12 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 	SOC_ENUM_EXT("BT SampleRate TX", bt_sample_rate_tx,
 			msm_bt_sample_rate_tx_get,
 			msm_bt_sample_rate_tx_put),
+#ifdef ASUS_ZC600KL_PROJECT
+	SOC_ENUM_EXT("Ext Speaker Switch", ext_spk_switch,
+			ext_spk_mode_get, ext_spk_mode_put),
+	SOC_ENUM_EXT("Analog Switch", analog_switch,
+			analog_switch_get, analog_switch_set),
+#endif
 };
 
 static const struct snd_kcontrol_new msm_sdw_controls[] = {
@@ -1330,16 +1470,30 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 	 * 210-290 == Button 2
 	 * 360-680 == Button 3
 	 */
+
+#ifdef ASUS_ZC600KL_PROJECT
+	btn_low[0] = 101;
+        btn_high[0] = 75;
+        btn_low[1] = 180;
+        btn_high[1] = 215;
+        btn_low[2] = 500;
+        btn_high[2] = 580;
+        btn_low[3] = 510;
+        btn_high[3] = 580;
+        btn_low[4] = 510;
+        btn_high[4] = 580;
+#else
 	btn_low[0] = 75;
 	btn_high[0] = 75;
-	btn_low[1] = 150;
-	btn_high[1] = 150;
+	btn_low[1] = 125;
+	btn_high[1] = 125;
 	btn_low[2] = 225;
 	btn_high[2] = 225;
-	btn_low[3] = 450;
-	btn_high[3] = 450;
-	btn_low[4] = 500;
-	btn_high[4] = 500;
+	btn_low[3] = 437;
+	btn_high[3] = 437;
+	btn_low[4] = 437;
+	btn_high[4] = 437;
+#endif
 
 	return msm_int_wcd_cal;
 }
@@ -1377,10 +1531,6 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "Handset Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "Headset Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "Secondary Mic");
-	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic1");
-	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic2");
-	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic3");
-	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic4");
 
 	snd_soc_dapm_ignore_suspend(dapm, "EAR");
 	snd_soc_dapm_ignore_suspend(dapm, "HEADPHONE");
@@ -1388,13 +1538,6 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC1");
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC2");
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC3");
-	snd_soc_dapm_sync(dapm);
-
-	dapm = snd_soc_codec_get_dapm(dig_cdc);
-	snd_soc_dapm_ignore_suspend(dapm, "DMIC1");
-	snd_soc_dapm_ignore_suspend(dapm, "DMIC2");
-	snd_soc_dapm_ignore_suspend(dapm, "DMIC3");
-	snd_soc_dapm_ignore_suspend(dapm, "DMIC4");
 
 	snd_soc_dapm_sync(dapm);
 
@@ -1509,6 +1652,7 @@ exit:
 	return ret;
 }
 
+#if 0
 static unsigned int tdm_param_set_slot_mask(u16 port_id, int slot_width,
 					    int slots)
 {
@@ -1659,6 +1803,7 @@ static int msm_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 end:
 	return ret;
 }
+#endif
 
 static int msm_snd_card_late_probe(struct snd_soc_card *card)
 {
@@ -1690,9 +1835,11 @@ static int msm_snd_card_late_probe(struct snd_soc_card *card)
 	return ret;
 }
 
+#if 0
 static struct snd_soc_ops msm_tdm_be_ops = {
 	.hw_params = msm_tdm_snd_hw_params
 };
+#endif
 
 static struct snd_soc_ops msm_wcn_ops = {
 	.hw_params = msm_wcn_hw_params,
@@ -2404,6 +2551,25 @@ static struct snd_soc_dai_link msm_int_dai[] = {
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA6,
 	},
+#ifdef ASUS_ZE620KL_PROJECT
+	{/* hw:x,40 */
+		.name = "Tertiary MI2S_TX Hostless",
+		.stream_name = "Tertiary MI2S_TX Hostless",
+		.cpu_dai_name = "TERT_MI2S_TX_HOSTLESS",
+		.platform_name  = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dpcm_capture = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		/* this dailink has playback support */
+		.ignore_pmdown_time = 1,
+		/* This dainlink has MI2S support */
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+#endif
 };
 
 
@@ -2424,6 +2590,21 @@ static struct snd_soc_dai_link msm_int_wsa_dai[] = {
 		.ignore_pmdown_time = 1,
 	},
 };
+
+#ifdef ASUS_ZE620KL_PROJECT
+static struct snd_soc_dai_link_component tfa98xx_codecs[] = {
+	{
+		.name = "tfa98xx.6-0034",
+		.of_node = NULL,
+		.dai_name = "tfa98xx-aif-6-34",
+	},
+	{
+		.name = "tfa98xx.6-0035",
+		.of_node = NULL,
+		.dai_name = "tfa98xx-aif-6-35",
+	},
+};
+#endif
 
 static struct snd_soc_dai_link msm_int_be_dai[] = {
 	/* Backend I2S DAI Links */
@@ -2587,6 +2768,7 @@ static struct snd_soc_dai_link msm_int_be_dai[] = {
 		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
 		.ignore_suspend = 1,
 	},
+#if 0
 	{
 		.name = LPASS_BE_PRI_TDM_RX_0,
 		.stream_name = "Primary TDM0 Playback",
@@ -2699,6 +2881,7 @@ static struct snd_soc_dai_link msm_int_be_dai[] = {
 		.ops = &msm_tdm_be_ops,
 		.ignore_suspend = 1,
 	},
+#endif
 };
 
 static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
@@ -2760,6 +2943,37 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.ops = &msm_mi2s_be_ops,
 		.ignore_suspend = 1,
 	},
+#ifdef ASUS_ZE620KL_PROJECT
+	{
+		.name = LPASS_BE_TERT_MI2S_RX,
+		.stream_name = "Tertiary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.2",
+		.platform_name = "msm-pcm-routing",
+		.codecs = tfa98xx_codecs,
+		.num_codecs = 2,
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
+		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_TERT_MI2S_TX,
+		.stream_name = "Tertiary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.2",
+		.platform_name = "msm-pcm-routing",
+		.codecs = tfa98xx_codecs,
+		.num_codecs = 2,
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_TX,
+		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+#else
 	{
 		.name = LPASS_BE_TERT_MI2S_RX,
 		.stream_name = "Tertiary MI2S Playback",
@@ -2789,6 +3003,7 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.ops = &msm_mi2s_be_ops,
 		.ignore_suspend = 1,
 	},
+#endif
 	{
 		.name = LPASS_BE_QUAT_MI2S_RX,
 		.stream_name = "Quaternary MI2S Playback",

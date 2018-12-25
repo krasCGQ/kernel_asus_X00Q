@@ -373,6 +373,15 @@ static int fw_get_filesystem_firmware(struct device *device,
 	int i, len;
 	int rc = -ENOENT;
 	char *path;
+	/* ASUS BSP : For Change ADSP FW loading path to vendor/firmware +++*/
+	char fw_name[5];
+	bool is_ADSP_readed = false;
+	/* ASUS BSP ---*/
+
+	/* ASUS BSP : For Change Venus FW loading path to vendor/firmware +++*/
+	char v_fw_name[6];
+	bool is_venus_readed = false;
+	/* ASUS BSP ---*/
 
 	path = __getname();
 	if (!path)
@@ -391,6 +400,86 @@ static int fw_get_filesystem_firmware(struct device *device,
 			rc = -ENAMETOOLONG;
 			break;
 		}
+
+		/* ASUS BSP : For Change ADSP FW loading path to vendor/firmware */
+		snprintf(fw_name, 5, "%s", buf->fw_id);
+		if (!strcmp(fw_name, "adsp")  &&  is_ADSP_readed == false ) {
+			if (!strcmp(buf->fw_id, "adsp.mdt"))    {
+				/*****************************
+				 * ZE620KL_636_PRJ_ID = 0x6
+				 * ZE554KL_630_PRJ_ID = 0x7
+				 * ZE554KL_660_PRJ_ID = 0x5
+				 * ZC600KL_630_PRJ_ID = 0xA
+				 *****************************/
+				if ( g_ASUS_prjID == 0x6)
+					dev_err(device, "[ADSP] This ZE620KL project is : SDM636(0x%x) \n", g_ASUS_prjID);
+				else if ( g_ASUS_prjID == 0x7 )
+					dev_err(device, "[ADSP] This ZE554KL project is : SDM630(0x%x) \n", g_ASUS_prjID);
+				else if ( g_ASUS_prjID == 0x5 )
+					dev_err(device, "[ADSP] This ZE554KL project is : SDM660(0x%x) \n", g_ASUS_prjID);
+				else if ( g_ASUS_prjID == 0xA )
+					dev_err(device, "[ADSP] This ZC600KL project is : SDM630(0x%x) \n", g_ASUS_prjID);
+				else
+					dev_err(device, "[ADSP] Unknown project(0x%x) \n", g_ASUS_prjID);
+			}
+			if ( g_ASUS_prjID == 0x6)	{
+				is_ADSP_readed = true;
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/q6_sdm636_image", buf->fw_id);
+				dev_err(device, "[ADSP] Try to load firmware : %s \n", path);
+			}
+			else if ( g_ASUS_prjID == 0x7 )     {
+				is_ADSP_readed = true;
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/q6_Sdm630_image", buf->fw_id);
+				dev_err(device, "[ADSP] Try to load firmware : %s \n", path);
+			}
+			else if ( g_ASUS_prjID == 0x5 )        {
+				is_ADSP_readed = true;
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/q6_Sdm660_image", buf->fw_id);
+				dev_err(device, "[ADSP] Try to load firmware : %s \n", path);
+			}
+			else if ( g_ASUS_prjID == 0xA )        {
+				is_ADSP_readed = true;
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/q6_zc600kl_sdm630_image", buf->fw_id);
+				dev_err(device, "[ADSP] Try to load firmware : %s \n", path);
+			}
+		}
+		/* ASUS BSP ---*/
+
+		/* ASUS BSP : For Change Venus FW loading path to vendor/firmware */
+		snprintf(v_fw_name, 6, "%s", buf->fw_id);
+		if (!strcmp(v_fw_name, "venus")  &&  is_venus_readed == false ) {
+			if (!strcmp(buf->fw_id, "venus.mdt"))    {
+				/*****************************
+				 * ZE620KL_636_PRJ_ID = 0x6
+				 * ZE554KL_630_PRJ_ID = 0x7
+				 * ZE554KL_660_PRJ_ID = 0x5
+				 *****************************/
+				if ( g_ASUS_prjID == 0x6)
+					dev_err(device, "[Venus] This ZE620KL project is : SDM636(0x%x) \n", g_ASUS_prjID);
+				else if ( g_ASUS_prjID == 0x07 )
+					dev_err(device, "[Venus] This ZE554KL project is : SDM630(0x%x) \n", g_ASUS_prjID);
+				else if ( g_ASUS_prjID == 0x05 )
+					dev_err(device, "[Venus] This ZE554KL project is : SDM660(0x%x) \n", g_ASUS_prjID);
+				else
+					dev_err(device, "[Venus] Unknown project(0x%x) \n", g_ASUS_prjID);
+			}
+			if ( g_ASUS_prjID == 0x6)	{
+				is_venus_readed = true;
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/", buf->fw_id);
+				dev_err(device, "[Venus] Try to load firmware : %s \n", path);
+			}
+			else if ( g_ASUS_prjID == 0x07 )	{
+				is_venus_readed = true;
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/sdm630", buf->fw_id);
+				dev_err(device, "[Venus] Try to load firmware : %s \n", path);
+			}
+			else if ( g_ASUS_prjID == 0x05 )	{
+				is_venus_readed = true;
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/sdm660", buf->fw_id);
+				dev_err(device, "[Venus] Try to load firmware : %s \n", path);
+			}
+		}
+		/* ASUS BSP ---*/
 
 		file = filp_open(path, O_RDONLY, 0);
 		if (IS_ERR(file))
